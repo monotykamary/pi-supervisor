@@ -16,7 +16,12 @@ import { analyze, loadSystemPrompt } from "./engine.js";
 import { updateUI, toggleWidget, isWidgetVisible, type WidgetAction } from "./ui/status-widget.js";
 import { pickModel } from "./ui/model-picker.js";
 import { openSettings } from "./ui/settings-panel.js";
-import { loadWorkspaceModel, saveWorkspaceModel } from "./workspace-config.js";
+import {
+  loadGlobalModel,
+  saveGlobalModel,
+  loadGlobalSensitivity,
+  saveGlobalSensitivity,
+} from "./global-config.js";
 import type { Sensitivity } from "./types.js";
 import { Type } from "@sinclair/typebox";
 
@@ -182,16 +187,21 @@ export default function (pi: ExtensionAPI) {
           return;
         }
         // Open the interactive settings panel (same as bare /supervise)
-        const workspaceModel = loadWorkspaceModel(ctx.cwd);
+        const globalModel = loadGlobalModel();
+        const globalSensitivity = loadGlobalSensitivity();
         const sessionModel = ctx.model;
-        const defaultProvider = s?.provider ?? workspaceModel?.provider ?? sessionModel?.provider ?? DEFAULT_PROVIDER;
-        const defaultModelId = s?.modelId ?? workspaceModel?.modelId ?? sessionModel?.id ?? DEFAULT_MODEL_ID;
-        const result = await openSettings(ctx, s, defaultProvider, defaultModelId, DEFAULT_SENSITIVITY);
+        const defaultProvider = s?.provider ?? globalModel?.provider ?? sessionModel?.provider ?? DEFAULT_PROVIDER;
+        const defaultModelId = s?.modelId ?? globalModel?.modelId ?? sessionModel?.id ?? DEFAULT_MODEL_ID;
+        const defaultSensitivity = s?.sensitivity ?? globalSensitivity ?? DEFAULT_SENSITIVITY;
+        const result = await openSettings(ctx, s, defaultProvider, defaultModelId, defaultSensitivity);
         if (result?.model) {
           if (state.isActive()) state.setModel(result.model.provider, result.model.modelId);
-          saveWorkspaceModel(ctx.cwd, result.model.provider, result.model.modelId);
+          saveGlobalModel(result.model.provider, result.model.modelId);
         }
-        if (result?.sensitivity && state.isActive()) state.setSensitivity(result.sensitivity);
+        if (result?.sensitivity) {
+          if (state.isActive()) state.setSensitivity(result.sensitivity);
+          saveGlobalSensitivity(result.sensitivity);
+        }
         if (result?.widget !== undefined && result.widget !== isWidgetVisible()) toggleWidget();
         if (result?.action === "stop" && state.isActive()) { state.stop(); idleSteers = 0; }
         updateUI(ctx, state.getState());
@@ -214,10 +224,9 @@ export default function (pi: ExtensionAPI) {
             state.setModel(provider, modelId);
             updateUI(ctx, state.getState());
           }
-          const saved = saveWorkspaceModel(ctx.cwd, provider, modelId);
+          saveGlobalModel(provider, modelId);
           ctx.ui.notify(
-            `Supervisor model set to ${provider}/${modelId}${state.isActive() ? "" : " (takes effect on next /supervise)"}` +
-              (saved ? " · saved to .pi/" : ""),
+            `Supervisor model set to ${provider}/${modelId}${state.isActive() ? "" : " (takes effect on next /supervise)"} · saved globally`,
             "info"
           );
           return;
@@ -239,10 +248,9 @@ export default function (pi: ExtensionAPI) {
           state.setModel(provider, modelId);
           updateUI(ctx, state.getState());
         }
-        const saved = saveWorkspaceModel(ctx.cwd, provider, modelId);
+        saveGlobalModel(provider, modelId);
         ctx.ui.notify(
-          `Supervisor model set to ${provider}/${modelId}${state.isActive() ? "" : " (takes effect on next /supervise)"}` +
-            (saved ? " · saved to .pi/" : ""),
+          `Supervisor model set to ${provider}/${modelId}${state.isActive() ? "" : " (takes effect on next /supervise)"} · saved globally`,
           "info"
         );
         return;
@@ -254,12 +262,13 @@ export default function (pi: ExtensionAPI) {
           ctx.ui.notify("Usage: /supervise sensitivity <low|medium|high>", "warning");
           return;
         }
+        saveGlobalSensitivity(level);
         if (!state.isActive()) {
-          ctx.ui.notify(`Sensitivity will be set to "${level}" on next /supervise.`, "info");
+          ctx.ui.notify(`Sensitivity set to "${level}" · saved globally (takes effect on next /supervise).`, "info");
         } else {
           state.setSensitivity(level);
           updateUI(ctx, state.getState());
-          ctx.ui.notify(`Supervisor sensitivity set to "${level}"`, "info");
+          ctx.ui.notify(`Supervisor sensitivity set to "${level}" · saved globally`, "info");
         }
         return;
       }
@@ -268,11 +277,13 @@ export default function (pi: ExtensionAPI) {
 
       if (!trimmed || trimmed === "settings") {
         const s = state.getState();
-        const workspaceModel = loadWorkspaceModel(ctx.cwd);
+        const globalModel = loadGlobalModel();
+        const globalSensitivity = loadGlobalSensitivity();
         const sessionModel = ctx.model;
-        const defaultProvider = s?.provider ?? workspaceModel?.provider ?? sessionModel?.provider ?? DEFAULT_PROVIDER;
-        const defaultModelId = s?.modelId ?? workspaceModel?.modelId ?? sessionModel?.id ?? DEFAULT_MODEL_ID;
-        const result = await openSettings(ctx, s, defaultProvider, defaultModelId, DEFAULT_SENSITIVITY);
+        const defaultProvider = s?.provider ?? globalModel?.provider ?? sessionModel?.provider ?? DEFAULT_PROVIDER;
+        const defaultModelId = s?.modelId ?? globalModel?.modelId ?? sessionModel?.id ?? DEFAULT_MODEL_ID;
+        const defaultSensitivity = s?.sensitivity ?? globalSensitivity ?? DEFAULT_SENSITIVITY;
+        const result = await openSettings(ctx, s, defaultProvider, defaultModelId, defaultSensitivity);
         if (!result) return; // user cancelled with no changes
 
         // Apply model change
@@ -281,10 +292,9 @@ export default function (pi: ExtensionAPI) {
           if (state.isActive()) {
             state.setModel(p, m);
           }
-          const saved = saveWorkspaceModel(ctx.cwd, p, m);
+          saveGlobalModel(p, m);
           ctx.ui.notify(
-            `Supervisor model set to ${p}/${m}${state.isActive() ? "" : " (takes effect on next /supervise)"}` +
-              (saved ? " · saved to .pi/" : ""),
+            `Supervisor model set to ${p}/${m}${state.isActive() ? "" : " (takes effect on next /supervise)"} · saved globally`,
             "info"
           );
         }
@@ -294,7 +304,8 @@ export default function (pi: ExtensionAPI) {
           if (state.isActive()) {
             state.setSensitivity(result.sensitivity);
           }
-          ctx.ui.notify(`Supervisor sensitivity set to "${result.sensitivity}"`, "info");
+          saveGlobalSensitivity(result.sensitivity);
+          ctx.ui.notify(`Supervisor sensitivity set to "${result.sensitivity}" · saved globally`, "info");
         }
 
         // Apply widget toggle
@@ -316,13 +327,14 @@ export default function (pi: ExtensionAPI) {
         return;
       }
 
-      // Resolve model settings: session state → workspace config → active session model → built-in defaults
+      // Resolve model settings: session state → global config → active session model → built-in defaults
       const existing = state.getState();
-      const workspaceModel = loadWorkspaceModel(ctx.cwd);
+      const globalModel = loadGlobalModel();
+      const globalSensitivity = loadGlobalSensitivity();
       const sessionModel = ctx.model;
-      let provider = existing?.provider ?? workspaceModel?.provider ?? sessionModel?.provider ?? DEFAULT_PROVIDER;
-      let modelId  = existing?.modelId  ?? workspaceModel?.modelId  ?? sessionModel?.id      ?? DEFAULT_MODEL_ID;
-      const sensitivity = existing?.sensitivity ?? DEFAULT_SENSITIVITY;
+      let provider = existing?.provider ?? globalModel?.provider ?? sessionModel?.provider ?? DEFAULT_PROVIDER;
+      let modelId  = existing?.modelId  ?? globalModel?.modelId  ?? sessionModel?.id      ?? DEFAULT_MODEL_ID;
+      const sensitivity = existing?.sensitivity ?? globalSensitivity ?? DEFAULT_SENSITIVITY;
 
       // Only prompt for a model if none has been configured yet
       if (!existing) {
@@ -393,9 +405,10 @@ export default function (pi: ExtensionAPI) {
       }
 
       // Resolve sensitivity
-      const sensitivity: Sensitivity = params.sensitivity ?? DEFAULT_SENSITIVITY;
+      const globalSensitivity = loadGlobalSensitivity();
+      const sensitivity: Sensitivity = params.sensitivity ?? globalSensitivity ?? DEFAULT_SENSITIVITY;
 
-      // Resolve model: tool param → workspace config → active session model → built-in default
+      // Resolve model: tool param → global config → active session model → built-in default
       let provider: string;
       let modelId: string;
       if (params.model) {
@@ -403,10 +416,10 @@ export default function (pi: ExtensionAPI) {
         provider = slash === -1 ? DEFAULT_PROVIDER : params.model.slice(0, slash);
         modelId  = slash === -1 ? params.model     : params.model.slice(slash + 1);
       } else {
-        const workspaceModel = loadWorkspaceModel(ctx.cwd);
+        const globalModel = loadGlobalModel();
         const sessionModel   = ctx.model;
-        provider = workspaceModel?.provider ?? sessionModel?.provider ?? DEFAULT_PROVIDER;
-        modelId  = workspaceModel?.modelId  ?? sessionModel?.id      ?? DEFAULT_MODEL_ID;
+        provider = globalModel?.provider ?? sessionModel?.provider ?? DEFAULT_PROVIDER;
+        modelId  = globalModel?.modelId  ?? sessionModel?.id      ?? DEFAULT_MODEL_ID;
       }
 
       state.start(params.outcome, provider, modelId, sensitivity);
