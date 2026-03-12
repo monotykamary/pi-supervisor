@@ -3,6 +3,7 @@
  *
  * Commands:
  *   /supervise <outcome>          — start supervising
+ *   /supervise                    — open settings, or infer goal if conversation exists
  *   /supervise stop               — stop supervision
  *   /supervise status             — show current status widget
  *   /supervise model              — open interactive model picker (pi-style)
@@ -12,7 +13,7 @@
 
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { SupervisorStateManager, DEFAULT_PROVIDER, DEFAULT_MODEL_ID, DEFAULT_SENSITIVITY } from "./state.js";
-import { analyze, loadSystemPrompt } from "./engine.js";
+import { analyze, inferOutcome, loadSystemPrompt } from "./engine.js";
 import { updateUI, toggleWidget, isWidgetVisible, type WidgetAction } from "./ui/status-widget.js";
 import { pickModel } from "./ui/model-picker.js";
 import { openSettings } from "./ui/settings-panel.js";
@@ -45,6 +46,25 @@ function extractThinking(accumulated: string): string {
 
 // After this many consecutive idle-state steers with no "done", run a lenient final evaluation.
 const MAX_IDLE_STEERS = 5;
+
+/** Check if the session has any user messages in its history. */
+function hasUserMessages(ctx: ExtensionContext): boolean {
+  const entries = ctx.sessionManager.getBranch();
+  for (const entry of entries) {
+    if (entry.type === "message") {
+      const msg = (entry as any).message;
+      if (msg?.role === "user") {
+        const content = typeof msg.content === "string"
+          ? msg.content
+          : Array.isArray(msg.content)
+            ? msg.content.filter((b: any) => b.type === "text").map((b: any) => b.text).join("\n").trim()
+            : "";
+        if (content && content.length > 0) return true;
+      }
+    }
+  }
+  return false;
+}
 
 export default function (pi: ExtensionAPI) {
   const state = new SupervisorStateManager(pi);
@@ -283,6 +303,51 @@ export default function (pi: ExtensionAPI) {
         const defaultProvider = s?.provider ?? globalModel?.provider ?? sessionModel?.provider ?? DEFAULT_PROVIDER;
         const defaultModelId = s?.modelId ?? globalModel?.modelId ?? sessionModel?.id ?? DEFAULT_MODEL_ID;
         const defaultSensitivity = s?.sensitivity ?? globalSensitivity ?? DEFAULT_SENSITIVITY;
+
+        // Check if there's conversation history and no active supervision
+        const hasConversation = !s?.active && hasUserMessages(ctx);
+
+        if (hasConversation) {
+          // Offer to infer outcome from conversation
+          const choice = await ctx.ui.select(
+            "Supervision options:",
+            [
+              "Infer goal from conversation",
+              "Open settings panel",
+              "Cancel"
+            ]
+          );
+
+          if (choice === "Cancel" || choice === undefined) {
+            return;
+          }
+
+          if (choice === "Infer goal from conversation") {
+            ctx.ui.setStatus("supervisor", "Inferring goal from conversation...");
+            const inferred = await inferOutcome(ctx, defaultProvider, defaultModelId);
+            ctx.ui.setStatus("supervisor", undefined);
+
+            if (!inferred) {
+              ctx.ui.notify("Could not infer goal from conversation. Opening settings panel.", "warning");
+              // Fall through to settings panel
+            } else {
+              // Start supervision immediately with inferred outcome and global settings
+              state.start(inferred, defaultProvider, defaultModelId, defaultSensitivity);
+              idleSteers = 0;
+              updateUI(ctx, state.getState());
+
+              const { source } = loadSystemPrompt(ctx.cwd);
+              const promptLabel = source === "built-in" ? "built-in prompt" : source.replace(ctx.cwd, ".");
+              ctx.ui.notify(
+                `Supervisor active: "${inferred.slice(0, 50)}${inferred.length > 50 ? "…" : ""}" | ${defaultProvider}/${defaultModelId} | ${promptLabel}`,
+                "info"
+              );
+              return;
+            }
+          }
+          // If "Open settings panel" or inference failed, fall through
+        }
+
         const result = await openSettings(ctx, s, defaultProvider, defaultModelId, defaultSensitivity);
         if (!result) return; // user cancelled with no changes
 

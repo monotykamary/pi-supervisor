@@ -15,7 +15,7 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
 import type { ConversationMessage, SteeringDecision, SupervisorState } from "./types.js";
-import { callSupervisorModel } from "./model-client.js";
+import { callModel, callSupervisorModel } from "./model-client.js";
 
 // ---- System prompt loading ----
 
@@ -235,5 +235,69 @@ export async function analyze(
     return agentIsIdle
       ? { action: "steer", message: "Please continue working toward the goal.", reasoning: "Analysis error", confidence: 0 }
       : { action: "continue", reasoning: "Analysis error", confidence: 0 };
+  }
+}
+
+// ---- Outcome inference for existing conversations ----
+
+/** System prompt for inferring an outcome from conversation history. */
+const INFER_OUTCOME_SYSTEM_PROMPT = `You are a goal extraction assistant. Your task is to analyze a conversation between a user and a coding AI assistant, and extract the user's primary desired outcome or goal.
+
+The outcome should be:
+- Specific and measurable (not vague like "make it better")
+- Action-oriented (what needs to be built, fixed, or achieved)
+- Concise (1-2 sentences, ideally under 100 characters)
+- Focused on the core intent, not implementation details
+
+Examples of good outcomes:
+- "Add JWT authentication with refresh tokens and test coverage"
+- "Refactor the database layer to use connection pooling"
+- "Fix the memory leak in the file upload handler"
+- "Implement dark mode toggle with system preference detection"
+
+Respond with ONLY the outcome statement. No quotes, no markdown, no explanations.`;
+
+/**
+ * Infer a supervision outcome from the conversation history.
+ * Returns null if inference fails or there's no conversation to analyze.
+ */
+export async function inferOutcome(
+  ctx: ExtensionContext,
+  provider: string,
+  modelId: string,
+  signal?: AbortSignal
+): Promise<string | null> {
+  // Build a focused snapshot for the immediate goal (last 6 messages = ~3 turns)
+  const snapshot = buildSnapshot(ctx, 6);
+  if (snapshot.length === 0) return null;
+
+  const conversationText = snapshot
+    .map((m) => `${m.role === "user" ? "USER" : "ASSISTANT"}: ${m.content}`)
+    .join("\n\n---\n\n");
+
+  const userPrompt = `Analyze this conversation and extract the user's primary goal or desired outcome:
+
+${conversationText}
+
+What is the specific outcome the user is trying to achieve?`;
+
+  try {
+    const result = await callModel(
+      ctx,
+      provider,
+      modelId,
+      INFER_OUTCOME_SYSTEM_PROMPT,
+      userPrompt,
+      signal
+    );
+    if (!result) return null;
+    // Clean up the result: remove quotes, trim whitespace, limit length
+    return result
+      .replace(/^["']|["']$/g, "") // Remove surrounding quotes
+      .replace(/\n/g, " ") // Replace newlines with spaces
+      .trim()
+      .slice(0, 200); // Hard limit at 200 chars
+  } catch {
+    return null;
   }
 }
