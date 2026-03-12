@@ -11,9 +11,9 @@
  *   /supervise              — auto-infer goal from conversation, or open settings
  *   /supervise <outcome>    — start supervising with explicit goal
  *   /supervise stop         — stop supervising
- *   /supervise status       — show settings panel
- *   /supervise model        — open model picker (global setting)
- *   /supervise model <p/m>  — set model directly (scripting)
+ *   /supervise widget       — toggle the status widget on/off
+ *   /supervise model        — open the interactive model picker
+ *   /supervise model <p/m>  — set supervisor model directly
  */
 
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
@@ -205,32 +205,6 @@ export default function (pi: ExtensionAPI) {
         return;
       }
 
-      if (trimmed === "status") {
-        const s = state.getState();
-        if (!s) {
-          ctx.ui.notify("No active supervision. Use /supervise to start.", "info");
-          return;
-        }
-        // Open the interactive settings panel
-        const globalModel = loadGlobalModel();
-        const sessionModel = ctx.model;
-        const defaultProvider = s?.provider ?? globalModel?.provider ?? sessionModel?.provider ?? DEFAULT_PROVIDER;
-        const defaultModelId = s?.modelId ?? globalModel?.modelId ?? sessionModel?.id ?? DEFAULT_MODEL_ID;
-        const result = await openSettings(ctx, s, defaultProvider, defaultModelId);
-        if (result?.model) {
-          if (state.isActive()) state.setModel(result.model.provider, result.model.modelId);
-          saveGlobalModel(result.model.provider, result.model.modelId);
-        }
-        if (result?.widget !== undefined && result.widget !== isWidgetVisible()) toggleWidget();
-        if (result?.action === "stop" && state.isActive()) { 
-          state.stop(); 
-          idleSteers = 0; 
-          disposeSession();
-        }
-        updateUI(ctx, state.getState());
-        return;
-      }
-
       if (trimmed === "model" || trimmed.startsWith("model ")) {
         const spec = trimmed.slice(5).trim(); // "" when no args
 
@@ -281,7 +255,7 @@ export default function (pi: ExtensionAPI) {
 
       // --- interactive settings panel ---
 
-      if (!trimmed || trimmed === "settings") {
+      if (!trimmed) {
         const s = state.getState();
         const globalModel = loadGlobalModel();
         const sessionModel = ctx.model;

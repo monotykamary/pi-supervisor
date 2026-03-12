@@ -44,10 +44,9 @@ pi -e ~/projects/pi-supervisor/src/index.ts
 
 | Command | Description |
 |---|---|
-| `/supervise` | Start supervising with auto-inferred goal, or open settings |
+| `/supervise` | Auto-infer goal from conversation, or open settings panel |
 | `/supervise <outcome>` | Start supervising with explicit goal |
 | `/supervise stop` | Stop active supervision |
-| `/supervise status` | Show current state (opens settings panel if active) |
 | `/supervise widget` | Toggle the status widget on/off |
 | `/supervise model` | Open the interactive model picker |
 | `/supervise model <provider/modelId>` | Set supervisor model directly |
@@ -69,7 +68,7 @@ The agent can also initiate supervision itself by calling the `start_supervision
 
 ### Settings Panel
 
-Run `/supervise` (no args) or `/supervise status` to open the interactive settings panel:
+Run `/supervise` (no args) to open the interactive settings panel:
 
 - **Model** — shows current model; press Enter to browse all available models
 - **Widget** — toggle visibility
