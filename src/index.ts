@@ -182,7 +182,11 @@ export default function (pi: ExtensionAPI) {
           return;
         }
         // Open the interactive settings panel (same as bare /supervise)
-        const result = await openSettings(ctx, s, DEFAULT_PROVIDER, DEFAULT_MODEL_ID, DEFAULT_SENSITIVITY);
+        const workspaceModel = loadWorkspaceModel(ctx.cwd);
+        const sessionModel = ctx.model;
+        const defaultProvider = s?.provider ?? workspaceModel?.provider ?? sessionModel?.provider ?? DEFAULT_PROVIDER;
+        const defaultModelId = s?.modelId ?? workspaceModel?.modelId ?? sessionModel?.id ?? DEFAULT_MODEL_ID;
+        const result = await openSettings(ctx, s, defaultProvider, defaultModelId, DEFAULT_SENSITIVITY);
         if (result?.model) {
           if (state.isActive()) state.setModel(result.model.provider, result.model.modelId);
           saveWorkspaceModel(ctx.cwd, result.model.provider, result.model.modelId);
@@ -264,7 +268,11 @@ export default function (pi: ExtensionAPI) {
 
       if (!trimmed || trimmed === "settings") {
         const s = state.getState();
-        const result = await openSettings(ctx, s, DEFAULT_PROVIDER, DEFAULT_MODEL_ID, DEFAULT_SENSITIVITY);
+        const workspaceModel = loadWorkspaceModel(ctx.cwd);
+        const sessionModel = ctx.model;
+        const defaultProvider = s?.provider ?? workspaceModel?.provider ?? sessionModel?.provider ?? DEFAULT_PROVIDER;
+        const defaultModelId = s?.modelId ?? workspaceModel?.modelId ?? sessionModel?.id ?? DEFAULT_MODEL_ID;
+        const result = await openSettings(ctx, s, defaultProvider, defaultModelId, DEFAULT_SENSITIVITY);
         if (!result) return; // user cancelled with no changes
 
         // Apply model change

@@ -113,7 +113,7 @@ export async function openSettings(
       label: (text, selected) => selected ? theme.bold(theme.fg("accent", text)) : theme.fg("dim", text),
       value: (text, selected) => selected ? theme.fg("accent", text) : theme.fg("muted", text),
       description: (text) => theme.fg("dim", text),
-      cursor: theme.fg("accent", "❯"),
+      cursor: theme.fg("accent", "❯ "),
       hint: (text) => theme.fg("dim", text),
     };
 
