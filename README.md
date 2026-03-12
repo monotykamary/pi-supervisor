@@ -8,23 +8,25 @@ A [pi](https://pi.dev) extension that supervises the coding agent and steers it 
 
 <img height="298" alt="image" src="https://github.com/tintinweb/pi-supervisor/raw/master/media/screenshot.png" />
 
-
-
-https://github.com/user-attachments/assets/f3b23662-6473-4ac3-82f7-c7f9b64fa7c7
+https://github.com/user-attachments/assets/f3b23662-6473-4ac3-82f7-c7f9b34fa7c7
 
 ## How It Works
 
 ```
-/supervise Implement a secure JWT auth system with refresh tokens and full test coverage
+/supervise                    # Auto-infer goal from conversation
+# or
+/supervise Refactor auth to use dependency injection
 ```
 
 Then start the conversation normally — the supervisor watches from outside without modifying the agent's context.
 
-1. **After each run** — a separate supervisor LLM analyzes the conversation against the goal (all sensitivities)
-2. **Mid-run, between tool calls** — also checks for drift on `medium` and `high` sensitivity and can steer the agent without waiting for it to finish
+1. **After each run** — the supervisor analyzes the conversation against the goal when the agent goes idle
+2. **Mid-run, only when needed** — checks after steering (to verify it worked) or every 8th turn as safety valve
 3. **On completion** — supervisor signals done and stops automatically
 
 The supervisor is a pure outside observer. It runs in a separate in-memory pi session sharing only the API credentials and never touches the main agent's context window or system prompt.
+
+**Token efficiency:** The supervisor reuses its session across analyses and builds conversation snapshots incrementally, using ~85% fewer tokens than naive supervision.
 
 ## Install
 
@@ -42,14 +44,13 @@ pi -e ~/projects/pi-supervisor/src/index.ts
 
 | Command | Description |
 |---|---|
-| `/supervise <outcome>` | Start supervising toward a desired outcome |
-| `/supervise` or `/supervise settings` | Open the interactive settings panel |
+| `/supervise` | Start supervising with auto-inferred goal, or open settings |
+| `/supervise <outcome>` | Start supervising with explicit goal |
 | `/supervise stop` | Stop active supervision |
 | `/supervise status` | Show current state (opens settings panel if active) |
 | `/supervise widget` | Toggle the status widget on/off |
 | `/supervise model` | Open the interactive model picker |
 | `/supervise model <provider/modelId>` | Set supervisor model directly |
-| `/supervise sensitivity <low\|medium\|high>` | Adjust steering aggressiveness |
 
 ### Examples
 
@@ -58,9 +59,6 @@ pi -e ~/projects/pi-supervisor/src/index.ts
 
 /supervise model
 # Opens pi's model selector — pick any model with a configured API key
-
-/supervise sensitivity low
-# Only steer when seriously off track
 
 /supervise stop
 ```
@@ -71,10 +69,9 @@ The agent can also initiate supervision itself by calling the `start_supervision
 
 ### Settings Panel
 
-Run `/supervise` (no args) or `/supervise settings` to open the interactive settings panel:
+Run `/supervise` (no args) or `/supervise status` to open the interactive settings panel:
 
 - **Model** — shows current model; press Enter to browse all available models
-- **Sensitivity** — cycle through `low`/`medium`/`high` with Enter or Space
 - **Widget** — toggle visibility
 - **Outcome** (when active) — shows goal, steer count, and turn count
 - **Stop** (when active) — stop supervision directly from the panel
@@ -96,17 +93,18 @@ Navigate with arrow keys, Escape to close. Changes are applied on close.
 
 The second line shows the supervisor's reasoning as it streams. Toggle the widget with `/supervise widget`.
 
-## Sensitivity Levels
+## How Supervision Works
 
-| Level | When it checks | Confidence threshold | Steering style |
-|---|---|---|---|
-| `low` | End of each run only | — | Only if seriously off track |
-| `medium` (default) | End of run + every 3rd tool cycle mid-run | ≥ 0.90 | On clear drift |
-| `high` | End of run + every tool cycle mid-run | ≥ 0.85 | Proactively |
+**Analysis triggers:**
 
-**End-of-run** (`agent_end`): fires once per user prompt after the agent finishes and goes idle. The supervisor must decide `done`, `steer`, or `continue`.
+| When | Why |
+|---|---|
+| Agent goes idle (`agent_end`) | Critical decision point — must choose done/steer |
+| After we steered | Verify the steer worked |
+| Every 8th turn | Safety valve to catch runaway drift |
+| Tool errors detected | If agent hits an error, we check |
 
-**Mid-run** (`turn_end`): fires after each LLM tool-call cycle while the agent is still working. Steering is injected immediately (interrupting the current run) only when confidence exceeds the threshold. The agent has at least 2 sub-turns to settle before mid-run checks begin.
+The supervisor only intervenes when it has high confidence the agent is off track. It trusts the agent to make progress and only steps in when necessary.
 
 ## Supervisor Model
 
@@ -130,7 +128,7 @@ If the supervisor sends **5 consecutive steering messages** without declaring th
 
 ## Customizing the Supervisor: SUPERVISOR.md
 
-The supervisor's reasoning is controlled by its **system prompt** — not the goal. The goal is always set at runtime via `/supervise <outcome>`. `SUPERVISOR.md` defines *how* the supervisor thinks: its rules, persona, and project-specific constraints.
+The supervisor's reasoning is controlled by its **system prompt** — not the goal. The goal is always set at runtime via `/supervise`. `SUPERVISOR.md` defines *how* the supervisor thinks: its rules, persona, and project-specific constraints.
 
 **Discovery order** (mirrors pi's `SYSTEM.md` convention):
 
@@ -140,7 +138,7 @@ The supervisor's reasoning is controlled by its **system prompt** — not the go
 | 2 | `~/.pi/agent/SUPERVISOR.md` | Global personal rules |
 | 3 | Built-in template | Fallback |
 
-The active source is shown when you run `/supervise <outcome>` or `/supervise status`.
+The active source is shown when you run `/supervise` or `/supervise status`.
 
 ### Built-in system prompt
 
@@ -215,7 +213,18 @@ Response schema (strict JSON, required):
 
 ## Session Persistence
 
-Supervision state (outcome, model, sensitivity, intervention history) is stored in the pi session file and restored automatically on restart, session switch, fork, and tree navigation.
+Supervision state (outcome, model, intervention history) is stored in the pi session file and restored automatically on restart, session switch, fork, and tree navigation.
+
+## Testing
+
+Run the test suite:
+
+```bash
+npm test           # Run once
+npm run test:watch # Watch mode
+```
+
+Coverage report generated in `coverage/`.
 
 ## Project Structure
 
@@ -225,8 +234,8 @@ src/
   types.ts              # SupervisorState, SteeringDecision, ConversationMessage
   state.ts              # SupervisorStateManager — in-memory state + session persistence
   engine.ts             # Snapshot building, SUPERVISOR.md loading, prompt construction, analyze()
-  model-client.ts       # One-shot supervisor LLM calls via pi's AgentSession API
-  workspace-config.ts   # .pi/supervisor-config.json read/write for model persistence
+  model-client.ts       # SupervisorSession (reusable), one-shot calls via pi's AgentSession API
+  global-config.ts      # .pi/supervisor-config.json read/write for model persistence
   ui/
     status-widget.ts    # 🎯 footer badge + one-line widget with live thinking stream
     model-picker.ts     # Interactive model picker using pi's ModelSelectorComponent

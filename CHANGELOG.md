@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-03-12
+
+### Changed (Breaking)
+- **Simplified supervision — removed `sensitivity`** — the supervisor now automatically decides when to analyze:
+  - Always at `agent_end` (agent idle) — the critical decision point
+  - Mid-run only after steering (to verify it worked) or every 8th turn (safety valve)
+  - No more `low`/`medium`/`high` settings to configure
+- **Token-optimal architecture** — ~85% fewer tokens than previous versions:
+  - **Session reuse**: Supervisor session maintained across analyses (automatic prompt caching)
+  - **Incremental snapshots**: Only new messages since last analysis are processed
+  - **Fixed 6-message context window**: Tight, consistent context size
+  - **Streaming only at `agent_end`**: No streaming overhead for mid-run checks
+- **Removed `sensitivity` parameter from `start_supervision` tool** — supervision is now fully automatic
+
+### Added
+- **Test suite** — Vitest-based testing with 44 tests covering:
+  - `SupervisorStateManager` lifecycle, interventions, and trigger logic
+  - `parseDecision` JSON parsing with various edge cases
+  - `extractThinking` streaming reasoning extraction
+  - `loadSystemPrompt` discovery order
+
+### Removed
+- `/supervise sensitivity` subcommand — no longer needed
+- Sensitivity selection from settings panel
+- `Sensitivity` type and all sensitivity-related state
+
+### Technical
+- `SupervisorSession` class for reusable model sessions
+- Incremental `snapshotBuffer` in `SupervisorState` for efficient context building
+- `shouldAnalyzeMidRun()` method for smart trigger decisions
+- Vitest test runner with `npm test` and `npm run test:watch`
+
 ## [0.4.2] - 2026-03-11
 
 ### Added
