@@ -182,8 +182,7 @@ export function updateSnapshot(
 function buildUserPrompt(
   state: SupervisorState,
   snapshot: ConversationMessage[],
-  agentIsIdle: boolean,
-  stagnating: boolean
+  agentIsIdle: boolean
 ): string {
   const interventionHistory =
     state.interventions.length === 0
@@ -205,18 +204,10 @@ function buildUserPrompt(
 You MUST return "done" or "steer". Returning "continue" here means the agent stays idle forever.`
     : `AGENT STATUS: WORKING — the agent is actively processing. Only intervene if clearly off track.`;
 
-  const stagnationWarning = stagnating
-    ? `\n⚠ STAGNATION: The supervisor has sent ${state.interventions.length} steering messages with no "done" verdict.
-The agent is making diminishing improvements. Apply a lenient standard:
-- If the core goal is substantially achieved (≥80%), return "done".
-- Only return "steer" if a CRITICAL piece is still missing — not minor polish.
-- Prefer stopping over looping forever on perfection.`
-    : "";
-
   return `DESIRED OUTCOME:
 ${state.outcome}
 
-${agentStatus}${stagnationWarning}
+${agentStatus}
 
 RECENT CONVERSATION (last ${snapshot.length} messages):
 ${conversationText}
@@ -238,7 +229,6 @@ export async function analyze(
   ctx: ExtensionContext,
   state: SupervisorState,
   agentIsIdle: boolean,
-  stagnating: boolean,
   signal?: AbortSignal,
   onDelta?: (accumulated: string) => void
 ): Promise<SteeringDecision> {
@@ -246,7 +236,7 @@ export async function analyze(
 
   // Update snapshot incrementally
   const snapshot = updateSnapshot(ctx, state);
-  const userPrompt = buildUserPrompt(state, snapshot, agentIsIdle, stagnating);
+  const userPrompt = buildUserPrompt(state, snapshot, agentIsIdle);
 
   try {
     return await callSupervisorModel(ctx, state.provider, state.modelId, systemPrompt, userPrompt, signal, onDelta);

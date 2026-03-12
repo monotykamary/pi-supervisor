@@ -45,8 +45,7 @@ export function extractThinking(accumulated: string): string {
   return raw.replace(/\\n/g, " ").replace(/\\"/g, '"').trim();
 }
 
-// After this many consecutive idle-state steers with no "done", run a lenient final evaluation.
-const MAX_IDLE_STEERS = 5;
+
 
 /** Check if the session has any user messages in its history. */
 function hasUserMessages(ctx: ExtensionContext): boolean {
@@ -109,7 +108,7 @@ export default function (pi: ExtensionAPI) {
 
     let decision;
     try {
-      decision = await analyze(ctx, state.getState()!, false /* agent still working */, false /* can't stagnate mid-turn */);
+      decision = await analyze(ctx, state.getState()!, false /* agent still working */);
     } catch {
       return;
     }
@@ -138,12 +137,9 @@ export default function (pi: ExtensionAPI) {
     state.incrementTurnCount();
     const s = state.getState()!;
 
-    // Stagnation: too many steers with no "done" → final lenient evaluation
-    const stagnating = idleSteers >= MAX_IDLE_STEERS;
-
     updateUI(ctx, s, { type: "analyzing", turn: s.turnCount });
 
-    const decision = await analyze(ctx, s, true /* always idle at agent_end */, stagnating, undefined, (accumulated) => {
+    const decision = await analyze(ctx, s, true /* always idle at agent_end */, undefined, (accumulated) => {
       const thinking = extractThinking(accumulated);
       updateUI(ctx, state.getState()!, { type: "analyzing", turn: s.turnCount, thinking });
     });
@@ -161,8 +157,7 @@ export default function (pi: ExtensionAPI) {
     } else if (decision.action === "done") {
       idleSteers = 0;
       updateUI(ctx, state.getState(), { type: "done" });
-      const suffix = stagnating ? ` (stopped after ${MAX_IDLE_STEERS} steering attempts — goal substantially achieved)` : "";
-      ctx.ui.notify(`Supervisor: outcome achieved! "${s.outcome}"${suffix}`, "info");
+      ctx.ui.notify(`Supervisor: outcome achieved! "${s.outcome}"`, "info");
       state.stop();
       disposeSession(); // Clean up reusable session
       updateUI(ctx, state.getState());
