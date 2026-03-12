@@ -85,6 +85,12 @@ Navigate with arrow keys, Escape to close. Changes are applied on close.
   The agent has added the DI container but hasn't updated the existing call sites yet…
 ```
 
+When the supervisor detects an ineffective pattern, the reframe tier appears (e.g., `↻2`):
+```
+◉ Supervising · Goal: "Implement payment flow…" · claude-haiku · ↗ 5 · ↻2 · ⟳ turn 12
+  Breaking into smaller milestone: get the checkout form rendering first…
+```
+
 The second line shows the supervisor's reasoning as it streams. Toggle the widget with `/supervise widget`.
 
 ## How Supervision Works
@@ -99,6 +105,24 @@ The second line shows the supervisor's reasoning as it streams. Toggle the widge
 | Tool errors detected | If agent hits an error, we check |
 
 The supervisor only intervenes when it has high confidence the agent is off track. It trusts the agent to make progress and only steps in when necessary.
+
+## Reframe Escalation
+
+When the supervisor detects that steering isn't working, it escalates through **4 tiers** of reframing strategies rather than giving up:
+
+| Tier | Trigger | Strategy |
+|---|---|---|
+| 0 | (default) | Standard steering |
+| 1 | Similar messages detected | **Directive** — be extremely specific about the next single action |
+| 2 | Pattern continues | **Subgoal** — break the goal into a smaller, verifiable milestone |
+| 3 | Still stuck | **Pivot** — suggest a completely different strategy or implementation path |
+| 4 | Persistent stall | **Minimal slice** — strip to absolute essentials, demand tangible output |
+
+**Pattern detection:** The supervisor tracks two indicators of ineffectiveness:
+- **Message similarity** — when 2+ recent steering messages are similar (suggesting the agent isn't responding)
+- **Stagnation** — when 3+ turns pass without progress after a steer
+
+When either pattern is detected, the supervisor escalates the reframe tier and injects tier-specific guidance into its prompt. The tier resets when the goal is achieved. This allows the supervisor to adapt to long-horizon projects that may take hours or days, rather than forcing early termination.
 
 ## Supervisor Model
 
@@ -116,9 +140,7 @@ Change at any time through the settings panel (run `/supervise` and select **Mod
 
 The supervisor is a pure outside observer — it does not modify the agent's system prompt. Goal discipline is enforced entirely through steering messages when the agent drifts. If the agent asks an out-of-scope clarifying question, the supervisor redirects it back to the goal rather than answering.
 
-## Stagnation Detection
-
-If the supervisor sends **5 consecutive steering messages** without declaring the goal done, it switches to a lenient evaluation mode: if the goal is ≥80% achieved, it declares done rather than looping forever on minor improvements. The threshold is configurable via `MAX_IDLE_STEERS` in `src/index.ts`.
+Unlike earlier versions, there are **no artificial limits** on steering attempts. The supervisor uses [reframe escalation](#reframe-escalation) to adapt its strategy when standard steering isn't working, allowing it to supervise long-horizon projects that may take hours or days to complete.
 
 ## Customizing the Supervisor: SUPERVISOR.md
 
@@ -183,6 +205,8 @@ Response schema (strict JSON):
 }
 ```
 
+**Dynamic reframe guidance:** When the supervisor detects an ineffective pattern, it injects tier-specific guidance into the prompt (see [Reframe Escalation](#reframe-escalation)).
+
 ### Writing a custom SUPERVISOR.md
 
 You must preserve the JSON response schema. Everything else is up to you.
@@ -225,13 +249,13 @@ Coverage report generated in `coverage/`.
 ```
 src/
   index.ts              # Extension entry point, event wiring, /supervise command, start_supervision tool
-  types.ts              # SupervisorState, SteeringDecision, ConversationMessage
-  state.ts              # SupervisorStateManager — in-memory state + session persistence
-  engine.ts             # Snapshot building, SUPERVISOR.md loading, prompt construction, analyze()
+  types.ts              # SupervisorState, SteeringDecision, ConversationMessage, ReframeTier
+  state.ts              # SupervisorStateManager — in-memory state + session persistence, reframe tier management, pattern detection
+  engine.ts             # Snapshot building, SUPERVISOR.md loading, prompt construction, analyze(), reframe guidance
   model-client.ts       # SupervisorSession (reusable), one-shot calls via pi's AgentSession API
   global-config.ts      # .pi/supervisor-config.json read/write for model persistence
   ui/
-    status-widget.ts    # 🎯 footer badge + one-line widget with live thinking stream
+    status-widget.ts    # 🎯 footer badge + one-line widget with live thinking stream + reframe tier indicator
     model-picker.ts     # Interactive model picker using pi's ModelSelectorComponent
     settings-panel.ts   # Interactive settings overlay using pi-tui's SettingsList
 ```

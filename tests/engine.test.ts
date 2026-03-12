@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { loadSystemPrompt, SNAPSHOT_LIMIT, updateSnapshot } from "../src/engine.js";
+import { loadSystemPrompt, SNAPSHOT_LIMIT, updateSnapshot, buildUserPrompt, getReframeGuidance } from "../src/engine.js";
 import type { SupervisorState } from "../src/types.js";
 
 // Mock fs for loadSystemPrompt tests
@@ -121,5 +121,185 @@ describe("updateSnapshot", () => {
     updateSnapshot(mockCtx, state);
     
     expect(state.lastAnalyzedTurn).toBe(3);
+  });
+});
+
+describe("getReframeGuidance", () => {
+  it("returns empty string for tier 0 without ineffective pattern", () => {
+    const result = getReframeGuidance(0);
+    expect(result).toBe("");
+  });
+
+  it("returns pattern warning even for tier 0 when ineffective pattern detected", () => {
+    const result = getReframeGuidance(0, { detected: true, similarCount: 2, turnsSinceLastSteer: 3 });
+    expect(result).toContain("INEFFECTIVE PATTERN DETECTED");
+  });
+
+  it("returns tier 1 guidance", () => {
+    const result = getReframeGuidance(1);
+    expect(result).toContain("REFRAME TIER 1");
+    expect(result).toContain("DIRECTIVE");
+    expect(result).toContain("extremely specific");
+  });
+
+  it("returns tier 2 guidance", () => {
+    const result = getReframeGuidance(2);
+    expect(result).toContain("REFRAME TIER 2");
+    expect(result).toContain("SUBGOAL");
+    expect(result).toContain("smaller, verifiable milestone");
+  });
+
+  it("returns tier 3 guidance", () => {
+    const result = getReframeGuidance(3);
+    expect(result).toContain("REFRAME TIER 3");
+    expect(result).toContain("PIVOT");
+    expect(result).toContain("completely different strategy");
+  });
+
+  it("returns tier 4 guidance", () => {
+    const result = getReframeGuidance(4);
+    expect(result).toContain("REFRAME TIER 4");
+    expect(result).toContain("MINIMAL SLICE");
+    expect(result).toContain("smallest working version");
+  });
+
+  it("includes ineffective pattern warning when detected", () => {
+    const result = getReframeGuidance(2, { detected: true, similarCount: 2, turnsSinceLastSteer: 3 });
+    expect(result).toContain("INEFFECTIVE PATTERN DETECTED");
+    expect(result).toContain("Last 2 steering messages");
+    expect(result).toContain("no progress in 3 turns");
+  });
+
+  it("does not include pattern warning when not detected", () => {
+    const result = getReframeGuidance(2, { detected: false, similarCount: 1, turnsSinceLastSteer: 1 });
+    expect(result).not.toContain("INEFFECTIVE PATTERN DETECTED");
+  });
+});
+
+describe("buildUserPrompt", () => {
+  it("includes reframe guidance when tier > 0", () => {
+    const state: SupervisorState = {
+      active: true,
+      outcome: "Implement auth",
+      provider: "anthropic",
+      modelId: "claude",
+      interventions: [],
+      startedAt: Date.now(),
+      turnCount: 1,
+      reframeTier: 2,
+    };
+    
+    const result = buildUserPrompt(state, [], true);
+    expect(result).toContain("REFRAME TIER 2");
+    expect(result).toContain("SUBGOAL");
+  });
+
+  it("does not include reframe guidance when tier is 0", () => {
+    const state: SupervisorState = {
+      active: true,
+      outcome: "Implement auth",
+      provider: "anthropic",
+      modelId: "claude",
+      interventions: [],
+      startedAt: Date.now(),
+      turnCount: 1,
+      reframeTier: 0,
+    };
+    
+    const result = buildUserPrompt(state, [], true);
+    expect(result).not.toContain("REFRAME TIER");
+  });
+
+  it("includes ineffective pattern warning in prompt", () => {
+    const state: SupervisorState = {
+      active: true,
+      outcome: "Implement auth",
+      provider: "anthropic",
+      modelId: "claude",
+      interventions: [
+        { turnCount: 1, message: "Focus on auth", reasoning: "Test", timestamp: Date.now() },
+      ],
+      startedAt: Date.now(),
+      turnCount: 4,
+      reframeTier: 1,
+    };
+    
+    const ineffectivePattern = { detected: true, similarCount: 1, turnsSinceLastSteer: 3 };
+    const result = buildUserPrompt(state, [], true, ineffectivePattern);
+    
+    expect(result).toContain("INEFFECTIVE PATTERN DETECTED");
+    expect(result).toContain("no progress in 3 turns");
+  });
+
+  it("includes outcome and agent status", () => {
+    const state: SupervisorState = {
+      active: true,
+      outcome: "Build API",
+      provider: "anthropic",
+      modelId: "claude",
+      interventions: [],
+      startedAt: Date.now(),
+      turnCount: 1,
+    };
+    
+    const result = buildUserPrompt(state, [], true);
+    expect(result).toContain("DESIRED OUTCOME:");
+    expect(result).toContain("Build API");
+    expect(result).toContain("AGENT STATUS: IDLE");
+  });
+
+  it("shows WORKING status when agent is not idle", () => {
+    const state: SupervisorState = {
+      active: true,
+      outcome: "Build API",
+      provider: "anthropic",
+      modelId: "claude",
+      interventions: [],
+      startedAt: Date.now(),
+      turnCount: 1,
+    };
+    
+    const result = buildUserPrompt(state, [], false);
+    expect(result).toContain("AGENT STATUS: WORKING");
+  });
+
+  it("includes conversation messages in prompt", () => {
+    const state: SupervisorState = {
+      active: true,
+      outcome: "Build API",
+      provider: "anthropic",
+      modelId: "claude",
+      interventions: [],
+      startedAt: Date.now(),
+      turnCount: 1,
+    };
+    
+    const snapshot = [
+      { role: "user" as const, content: "Hello" },
+      { role: "assistant" as const, content: "Hi there" },
+    ];
+    
+    const result = buildUserPrompt(state, snapshot, true);
+    expect(result).toContain("USER: Hello");
+    expect(result).toContain("ASSISTANT: Hi there");
+  });
+
+  it("includes intervention history", () => {
+    const state: SupervisorState = {
+      active: true,
+      outcome: "Build API",
+      provider: "anthropic",
+      modelId: "claude",
+      interventions: [
+        { turnCount: 1, message: "Focus on X", reasoning: "Drift", timestamp: 123456 },
+      ],
+      startedAt: Date.now(),
+      turnCount: 2,
+    };
+    
+    const result = buildUserPrompt(state, [], true);
+    expect(result).toContain("PREVIOUS INTERVENTIONS BY YOU:");
+    expect(result).toContain("[1] Turn 1:");
+    expect(result).toContain("Focus on X");
   });
 });

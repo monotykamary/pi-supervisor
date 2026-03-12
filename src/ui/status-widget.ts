@@ -32,10 +32,10 @@ export function isWidgetVisible(): boolean {
 }
 
 export type WidgetAction =
-  | { type: "watching" }
-  | { type: "analyzing"; turn: number; thinking?: string }
-  | { type: "steering"; message: string }
-  | { type: "done" };
+  | { type: "watching"; reframeTier?: number }
+  | { type: "analyzing"; turn: number; reframeTier?: number; thinking?: string }
+  | { type: "steering"; message: string; reframeTier?: number }
+  | { type: "done"; reframeTier?: number };
 
 function truncate(s: string, max: number): string {
   return s.length <= max ? s : s.slice(0, max - 1) + "…";
@@ -84,6 +84,10 @@ export function updateUI(
     // Steer count
     const steers = steerCount > 0 ? theme.fg("dim", `↗ ${steerCount}`) : "";
 
+    // Reframe tier indicator
+    const reframeTier = snapAction.reframeTier ?? 0;
+    const reframeStr = reframeTier > 0 ? theme.fg("error", `↻${reframeTier}`) : "";
+
     // Current action
     let actionStr: string;
     let thinking = "";
@@ -104,7 +108,7 @@ export function updateUI(
     }
 
     const sep   = theme.fg("dim", " · ");
-    const parts = [header, goal, model, steers, actionStr].filter(Boolean);
+    const parts = [header, goal, model, steers, reframeStr, actionStr].filter(Boolean);
     const line  = parts.join(sep);
 
     const thinkingLine = thinking

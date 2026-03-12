@@ -137,11 +137,17 @@ export default function (pi: ExtensionAPI) {
     state.incrementTurnCount();
     const s = state.getState()!;
 
-    updateUI(ctx, s, { type: "analyzing", turn: s.turnCount });
+    // Check for ineffective steering patterns and escalate reframe tier if needed
+    const ineffectivePattern = state.detectIneffectivePattern();
+    if (ineffectivePattern.detected && state.getReframeTier() < 4) {
+      state.escalateReframeTier();
+    }
 
-    const decision = await analyze(ctx, s, true /* always idle at agent_end */, undefined, (accumulated) => {
+    updateUI(ctx, s, { type: "analyzing", turn: s.turnCount, reframeTier: state.getReframeTier() });
+
+    const decision = await analyze(ctx, s, true /* always idle at agent_end */, ineffectivePattern, undefined, (accumulated) => {
       const thinking = extractThinking(accumulated);
-      updateUI(ctx, state.getState()!, { type: "analyzing", turn: s.turnCount, thinking });
+      updateUI(ctx, state.getState()!, { type: "analyzing", turn: s.turnCount, reframeTier: state.getReframeTier(), thinking });
     });
 
     if (decision.action === "steer" && decision.message) {
@@ -152,17 +158,18 @@ export default function (pi: ExtensionAPI) {
         reasoning: decision.reasoning,
         timestamp: Date.now(),
       });
-      updateUI(ctx, state.getState(), { type: "steering", message: decision.message });
+      updateUI(ctx, state.getState(), { type: "steering", message: decision.message, reframeTier: state.getReframeTier() });
       pi.sendUserMessage(decision.message);
     } else if (decision.action === "done") {
       idleSteers = 0;
+      state.resetReframeTier();
       updateUI(ctx, state.getState(), { type: "done" });
       ctx.ui.notify(`Supervisor: outcome achieved! "${s.outcome}"`, "info");
       state.stop();
       disposeSession(); // Clean up reusable session
       updateUI(ctx, state.getState());
     } else {
-      updateUI(ctx, state.getState(), { type: "watching" });
+      updateUI(ctx, state.getState(), { type: "watching", reframeTier: state.getReframeTier() });
     }
   });
 

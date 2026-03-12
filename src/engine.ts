@@ -178,11 +178,31 @@ export function updateSnapshot(
   return snapshot;
 }
 
+/** Get reframe guidance based on current tier */
+export function getReframeGuidance(tier: number, ineffectivePattern?: { detected: boolean; similarCount: number; turnsSinceLastSteer: number }): string {
+  if (!ineffectivePattern?.detected && tier === 0) return "";
+
+  const tierGuidance: Record<number, string> = {
+    0: "",
+    1: `🔄 REFRAME TIER 1 — DIRECTIVE: The agent needs clearer direction. Be extremely specific about the next single action to take.`,
+    2: `🔄 REFRAME TIER 2 — SUBGOAL: The agent is stuck on the full goal. Break this into a smaller, verifiable milestone. Tell it to complete just that one piece.`,
+    3: `🔄 REFRAME TIER 3 — PIVOT: The current approach isn't working. Suggest a completely different strategy or implementation path. Challenge any assumptions.`,
+    4: `🔄 REFRAME TIER 4 — MINIMAL SLICE: Strip to absolute essentials. Ask: "What's the smallest working version you can deliver right now?" Push for tangible output.`,
+  };
+
+  const patternNote = ineffectivePattern?.detected
+    ? `\n⚠ INEFFECTIVE PATTERN DETECTED: Last ${ineffectivePattern.similarCount} steering messages were similar or no progress in ${ineffectivePattern.turnsSinceLastSteer} turns. Escalate your approach.`
+    : "";
+
+  return tierGuidance[tier] + patternNote;
+}
+
 /** Build the user-facing prompt for the supervisor LLM. */
-function buildUserPrompt(
+export function buildUserPrompt(
   state: SupervisorState,
   snapshot: ConversationMessage[],
-  agentIsIdle: boolean
+  agentIsIdle: boolean,
+  ineffectivePattern?: { detected: boolean; similarCount: number; turnsSinceLastSteer: number }
 ): string {
   const interventionHistory =
     state.interventions.length === 0
@@ -204,10 +224,13 @@ function buildUserPrompt(
 You MUST return "done" or "steer". Returning "continue" here means the agent stays idle forever.`
     : `AGENT STATUS: WORKING — the agent is actively processing. Only intervene if clearly off track.`;
 
+  const reframeGuidance = getReframeGuidance(state.reframeTier ?? 0, ineffectivePattern);
+  const reframeSection = reframeGuidance ? `\n${reframeGuidance}\n` : "";
+
   return `DESIRED OUTCOME:
 ${state.outcome}
 
-${agentStatus}
+${agentStatus}${reframeSection}
 
 RECENT CONVERSATION (last ${snapshot.length} messages):
 ${conversationText}
@@ -229,6 +252,7 @@ export async function analyze(
   ctx: ExtensionContext,
   state: SupervisorState,
   agentIsIdle: boolean,
+  ineffectivePattern?: { detected: boolean; similarCount: number; turnsSinceLastSteer: number },
   signal?: AbortSignal,
   onDelta?: (accumulated: string) => void
 ): Promise<SteeringDecision> {
@@ -236,7 +260,7 @@ export async function analyze(
 
   // Update snapshot incrementally
   const snapshot = updateSnapshot(ctx, state);
-  const userPrompt = buildUserPrompt(state, snapshot, agentIsIdle);
+  const userPrompt = buildUserPrompt(state, snapshot, agentIsIdle, ineffectivePattern);
 
   try {
     return await callSupervisorModel(ctx, state.provider, state.modelId, systemPrompt, userPrompt, signal, onDelta);

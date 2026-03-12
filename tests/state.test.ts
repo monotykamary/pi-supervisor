@@ -15,6 +15,203 @@ function createMockApi() {
 }
 
 describe("SupervisorStateManager", () => {
+  describe("reframe tier management", () => {
+    it("initializes reframe tier to 0 on start", () => {
+      const api = createMockApi();
+      const state = new SupervisorStateManager(api);
+      state.start("Test goal", "anthropic", "claude-haiku");
+      
+      expect(state.getReframeTier()).toBe(0);
+      expect(state.getState()!.reframeTier).toBe(0);
+      expect(state.getState()!.lastSteerTurn).toBe(-1);
+    });
+
+    it("escalates reframe tier up to max of 4", () => {
+      const api = createMockApi();
+      const state = new SupervisorStateManager(api);
+      state.start("Test goal", "anthropic", "claude-haiku");
+      
+      expect(state.getReframeTier()).toBe(0);
+      
+      state.escalateReframeTier();
+      expect(state.getReframeTier()).toBe(1);
+      
+      state.escalateReframeTier();
+      expect(state.getReframeTier()).toBe(2);
+      
+      state.escalateReframeTier();
+      expect(state.getReframeTier()).toBe(3);
+      
+      state.escalateReframeTier();
+      expect(state.getReframeTier()).toBe(4);
+      
+      // Should not go above 4
+      state.escalateReframeTier();
+      expect(state.getReframeTier()).toBe(4);
+    });
+
+    it("resets reframe tier to 0", () => {
+      const api = createMockApi();
+      const state = new SupervisorStateManager(api);
+      state.start("Test goal", "anthropic", "claude-haiku");
+      
+      state.escalateReframeTier();
+      state.escalateReframeTier();
+      expect(state.getReframeTier()).toBe(2);
+      
+      state.resetReframeTier();
+      expect(state.getReframeTier()).toBe(0);
+    });
+
+    it("returns 0 when not active", () => {
+      const api = createMockApi();
+      const state = new SupervisorStateManager(api);
+      expect(state.getReframeTier()).toBe(0);
+    });
+
+    it("persists reframe tier changes", () => {
+      const api = createMockApi();
+      const state = new SupervisorStateManager(api);
+      state.start("Test goal", "anthropic", "claude-haiku");
+      
+      state.escalateReframeTier();
+      
+      expect(api.appendEntry).toHaveBeenLastCalledWith(
+        "supervisor-state",
+        expect.objectContaining({ reframeTier: 1 })
+      );
+    });
+
+    it("tracks lastSteerTurn when adding intervention", () => {
+      const api = createMockApi();
+      const state = new SupervisorStateManager(api);
+      state.start("Test goal", "anthropic", "claude-haiku");
+      state.incrementTurnCount();
+      state.incrementTurnCount();
+      
+      state.addIntervention({
+        turnCount: 2,
+        message: "Please focus on X",
+        reasoning: "Agent drifted",
+        timestamp: Date.now(),
+      });
+      
+      expect(state.getState()!.lastSteerTurn).toBe(2);
+    });
+  });
+
+  describe("ineffective pattern detection", () => {
+    it("returns no pattern with less than 2 interventions", () => {
+      const api = createMockApi();
+      const state = new SupervisorStateManager(api);
+      state.start("Test goal", "anthropic", "claude-haiku");
+      
+      const pattern = state.detectIneffectivePattern();
+      expect(pattern.detected).toBe(false);
+      expect(pattern.similarCount).toBe(0);
+    });
+
+    it("detects similar messages", () => {
+      const api = createMockApi();
+      const state = new SupervisorStateManager(api);
+      state.start("Test goal", "anthropic", "claude-haiku");
+      
+      // Add similar interventions
+      state.incrementTurnCount();
+      state.addIntervention({
+        turnCount: 1,
+        message: "Please implement the auth middleware",
+        reasoning: "Not done yet",
+        timestamp: Date.now(),
+      });
+      
+      state.incrementTurnCount();
+      state.addIntervention({
+        turnCount: 2,
+        message: "Please implement the auth middleware now",
+        reasoning: "Still not done",
+        timestamp: Date.now(),
+      });
+      
+      const pattern = state.detectIneffectivePattern();
+      expect(pattern.detected).toBe(true);
+      expect(pattern.similarCount).toBe(2);
+    });
+
+    it("detects lack of progress (3+ turns since steer)", () => {
+      const api = createMockApi();
+      const state = new SupervisorStateManager(api);
+      state.start("Test goal", "anthropic", "claude-haiku");
+      
+      // Add intervention
+      state.incrementTurnCount();
+      state.addIntervention({
+        turnCount: 1,
+        message: "Focus on X",
+        reasoning: "Test",
+        timestamp: Date.now(),
+      });
+      
+      // Advance 3 turns without steering
+      state.incrementTurnCount(); // turn 2
+      state.incrementTurnCount(); // turn 3
+      state.incrementTurnCount(); // turn 4
+      
+      const pattern = state.detectIneffectivePattern();
+      expect(pattern.detected).toBe(true);
+      expect(pattern.turnsSinceLastSteer).toBe(3);
+    });
+
+    it("does not detect pattern when progress is being made", () => {
+      const api = createMockApi();
+      const state = new SupervisorStateManager(api);
+      state.start("Test goal", "anthropic", "claude-haiku");
+      
+      // Add intervention
+      state.incrementTurnCount();
+      state.addIntervention({
+        turnCount: 1,
+        message: "Focus on X",
+        reasoning: "Test",
+        timestamp: Date.now(),
+      });
+      
+      // Only 2 turns since steer
+      state.incrementTurnCount();
+      state.incrementTurnCount();
+      
+      const pattern = state.detectIneffectivePattern();
+      expect(pattern.detected).toBe(false);
+      expect(pattern.turnsSinceLastSteer).toBe(2);
+    });
+
+    it("detects dissimilar messages as different", () => {
+      const api = createMockApi();
+      const state = new SupervisorStateManager(api);
+      state.start("Test goal", "anthropic", "claude-haiku");
+      
+      state.incrementTurnCount();
+      state.addIntervention({
+        turnCount: 1,
+        message: "Implement the database layer",
+        reasoning: "Need DB",
+        timestamp: Date.now(),
+      });
+      
+      state.incrementTurnCount();
+      state.addIntervention({
+        turnCount: 2,
+        message: "Now create the API endpoints",
+        reasoning: "Need API",
+        timestamp: Date.now(),
+      });
+      
+      const pattern = state.detectIneffectivePattern();
+      expect(pattern.detected).toBe(false);
+      expect(pattern.similarCount).toBe(1);
+    });
+  });
+
   describe("basic lifecycle", () => {
     it("starts inactive", () => {
       const api = createMockApi();
