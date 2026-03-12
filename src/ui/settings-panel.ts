@@ -5,25 +5,18 @@
  * with cycling values, submenu support (model picker), and live updates.
  *
  * Opened via `/supervise` (no args) or `/supervise settings`.
+ *
+ * Removed: sensitivity setting (now automatic)
  */
 
 import { SettingsList, type SettingItem, type SettingsListTheme } from "@mariozechner/pi-tui";
 import { ModelSelectorComponent, SettingsManager } from "@mariozechner/pi-coding-agent";
 import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
-import type { SupervisorState, Sensitivity } from "../types.js";
+import type { SupervisorState } from "../types.js";
 import { isWidgetVisible } from "./status-widget.js";
-
-const SENSITIVITIES: Sensitivity[] = ["low", "medium", "high"];
-
-const SENSITIVITY_DESCRIPTIONS: Record<Sensitivity, string> = {
-  low: "Steer only when seriously off track (end of run only)",
-  medium: "Steer on clear drift (end of run + every 3rd mid-turn)",
-  high: "Proactive steering (end of run + every mid-turn)",
-};
 
 export interface SettingsResult {
   model?: { provider: string; modelId: string };
-  sensitivity?: Sensitivity;
   widget?: boolean;
   action?: "stop" | "start";
 }
@@ -37,11 +30,9 @@ export async function openSettings(
   state: SupervisorState | null,
   defaultProvider: string,
   defaultModelId: string,
-  defaultSensitivity: Sensitivity,
 ): Promise<SettingsResult | null> {
   const currentProvider = state?.provider ?? defaultProvider;
   const currentModelId = state?.modelId ?? defaultModelId;
-  const currentSensitivity = state?.sensitivity ?? defaultSensitivity;
   const isActive = state?.active === true;
 
   const result: SettingsResult = {};
@@ -76,13 +67,6 @@ export async function openSettings(
         description: "Supervisor LLM model (Enter to browse)",
         currentValue: `${currentProvider}/${currentModelId}`,
         submenu: makeModelSubmenu,
-      },
-      {
-        id: "sensitivity",
-        label: "Sensitivity",
-        description: SENSITIVITY_DESCRIPTIONS[currentSensitivity],
-        currentValue: currentSensitivity,
-        values: [...SENSITIVITIES],
       },
       {
         id: "widget",
@@ -122,12 +106,7 @@ export async function openSettings(
       12,
       settingsTheme,
       (id, newValue) => {
-        if (id === "sensitivity") {
-          const sens = newValue as Sensitivity;
-          result.sensitivity = sens;
-          // Update description dynamically
-          settingsList.updateValue("sensitivity", sens);
-        } else if (id === "widget") {
+        if (id === "widget") {
           result.widget = newValue === "visible";
         } else if (id === "stop" && newValue === "confirm") {
           result.action = "stop";
@@ -136,7 +115,7 @@ export async function openSettings(
       },
       () => {
         // Cancel — return null if no changes, or partial result if some changes were made
-        const hasChanges = result.model || result.sensitivity || result.widget !== undefined;
+        const hasChanges = result.model || result.widget !== undefined;
         done(hasChanges ? result : null);
       },
     );

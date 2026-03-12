@@ -1,18 +1,23 @@
 /**
  * pi-supervisor — A pi extension that supervises the chat and steers it toward a defined outcome.
  *
+ * Token-optimal design:
+ * - Single trigger: always at agent_end (when idle)
+ * - Mid-run: only if just steered (checking if it worked) or safety valve every 8th turn
+ * - Session reuse for automatic prompt caching
+ * - Incremental 6-message snapshots
+ *
  * Commands:
- *   /supervise <outcome>          — start supervising
- *   /supervise                    — open settings, or infer goal if conversation exists
- *   /supervise stop               — stop supervision
- *   /supervise status             — show current status widget
- *   /supervise model              — open interactive model picker (pi-style)
- *   /supervise model <p/modelId>  — set model directly (scripting)
- *   /supervise sensitivity <low|medium|high> — adjust steering sensitivity
+ *   /supervise              — auto-infer goal from conversation, or open settings
+ *   /supervise <outcome>    — start supervising with explicit goal
+ *   /supervise stop         — stop supervising
+ *   /supervise status       — show settings panel
+ *   /supervise model        — open model picker (global setting)
+ *   /supervise model <p/m>  — set model directly (scripting)
  */
 
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
-import { SupervisorStateManager, DEFAULT_PROVIDER, DEFAULT_MODEL_ID, DEFAULT_SENSITIVITY } from "./state.js";
+import { SupervisorStateManager, DEFAULT_PROVIDER, DEFAULT_MODEL_ID } from "./state.js";
 import { analyze, inferOutcome, loadSystemPrompt } from "./engine.js";
 import { updateUI, toggleWidget, isWidgetVisible, type WidgetAction } from "./ui/status-widget.js";
 import { pickModel } from "./ui/model-picker.js";
@@ -20,17 +25,15 @@ import { openSettings } from "./ui/settings-panel.js";
 import {
   loadGlobalModel,
   saveGlobalModel,
-  loadGlobalSensitivity,
-  saveGlobalSensitivity,
 } from "./global-config.js";
-import type { Sensitivity } from "./types.js";
+import { disposeSession } from "./model-client.js";
 import { Type } from "@sinclair/typebox";
 
 /**
  * Extract partial reasoning text from the supervisor's streaming JSON response.
  * Works on incomplete JSON while the model is still generating.
  */
-function extractThinking(accumulated: string): string {
+export function extractThinking(accumulated: string): string {
   // Find the "reasoning" key and capture content after the opening quote
   const keyIdx = accumulated.indexOf('"reasoning"');
   if (keyIdx === -1) return "";
@@ -90,33 +93,33 @@ export default function (pi: ExtensionAPI) {
     currentCtx = ctx;
   });
 
-  // ---- Mid-turn steering: medium and high sensitivity ----
-  // turn_end fires after each LLM sub-turn (tool-call cycle) while the agent is still running.
-  // low:    no mid-run checks at all
-  // medium: check every 3rd tool cycle (turns 2, 5, 8, …), confidence >= 0.9
-  // high:   check every tool cycle from turn 2, confidence >= 0.85
+  // ---- Mid-run steering: only when necessary ----
+  // turn_end fires after each LLM sub-turn (tool-call cycle) while agent is still running.
+  // We check only if:
+  // 1. We just steered (to verify it worked) - immediate next turn
+  // 2. Safety valve every 8th turn (to catch runaway drift)
 
   pi.on("turn_end", async (event, ctx) => {
     currentCtx = ctx;
     if (!state.isActive()) return;
-    const s = state.getState()!;
 
-    if (s.sensitivity === "low") return;
-    if (event.turnIndex < 2) return; // let the agent settle before intervening
-    if (s.sensitivity === "medium" && (event.turnIndex - 2) % 3 !== 0) return;
+    const shouldAnalyze = state.shouldAnalyzeMidRun(event.turnIndex);
+    if (!shouldAnalyze) return;
+
+    // Clear the justSteered flag since we're checking now
+    state.clearJustSteered();
 
     let decision;
     try {
-      decision = await analyze(ctx, s, false /* agent still working */, false /* can't stagnate mid-turn */);
+      decision = await analyze(ctx, state.getState()!, false /* agent still working */, false /* can't stagnate mid-turn */);
     } catch {
       return;
     }
 
-    // Higher bar for medium — less willing to disrupt productive work
-    const threshold = s.sensitivity === "medium" ? 0.9 : 0.85;
-    if (decision.action === "steer" && decision.message && decision.confidence >= threshold) {
+    // Mid-run threshold: only intervene if clearly off track
+    if (decision.action === "steer" && decision.message && decision.confidence >= 0.85) {
       state.addIntervention({
-        turnCount: s.turnCount,
+        turnCount: state.getState()!.turnCount,
         message: decision.message,
         reasoning: decision.reasoning,
         timestamp: Date.now(),
@@ -128,7 +131,7 @@ export default function (pi: ExtensionAPI) {
 
   // ---- After each agent run: analyze + steer ----
   // agent_end fires once per user prompt, always with the agent idle and waiting for input.
-  // This is the critical checkpoint for all sensitivity levels.
+  // This is the critical checkpoint where we decide done/steer/continue.
 
   pi.on("agent_end", async (_event, ctx) => {
     currentCtx = ctx;
@@ -163,6 +166,7 @@ export default function (pi: ExtensionAPI) {
       const suffix = stagnating ? ` (stopped after ${MAX_IDLE_STEERS} steering attempts — goal substantially achieved)` : "";
       ctx.ui.notify(`Supervisor: outcome achieved! "${s.outcome}"${suffix}`, "info");
       state.stop();
+      disposeSession(); // Clean up reusable session
       updateUI(ctx, state.getState());
     } else {
       updateUI(ctx, state.getState(), { type: "watching" });
@@ -172,7 +176,7 @@ export default function (pi: ExtensionAPI) {
   // ---- /supervise command ----
 
   pi.registerCommand("supervise", {
-    description: "Supervise the chat toward a desired outcome (/supervise <outcome>)",
+    description: "Supervise the chat toward a desired outcome (/supervise or /supervise <outcome>)",
     handler: async (args, ctx) => {
       currentCtx = ctx;
       const trimmed = args?.trim() ?? "";
@@ -195,6 +199,7 @@ export default function (pi: ExtensionAPI) {
         }
         state.stop();
         idleSteers = 0;
+        disposeSession();
         updateUI(ctx, state.getState());
         ctx.ui.notify("Supervisor stopped.", "info");
         return;
@@ -203,27 +208,25 @@ export default function (pi: ExtensionAPI) {
       if (trimmed === "status") {
         const s = state.getState();
         if (!s) {
-          ctx.ui.notify("No active supervision. Use /supervise <outcome> to start.", "info");
+          ctx.ui.notify("No active supervision. Use /supervise to start.", "info");
           return;
         }
-        // Open the interactive settings panel (same as bare /supervise)
+        // Open the interactive settings panel
         const globalModel = loadGlobalModel();
-        const globalSensitivity = loadGlobalSensitivity();
         const sessionModel = ctx.model;
         const defaultProvider = s?.provider ?? globalModel?.provider ?? sessionModel?.provider ?? DEFAULT_PROVIDER;
         const defaultModelId = s?.modelId ?? globalModel?.modelId ?? sessionModel?.id ?? DEFAULT_MODEL_ID;
-        const defaultSensitivity = s?.sensitivity ?? globalSensitivity ?? DEFAULT_SENSITIVITY;
-        const result = await openSettings(ctx, s, defaultProvider, defaultModelId, defaultSensitivity);
+        const result = await openSettings(ctx, s, defaultProvider, defaultModelId);
         if (result?.model) {
           if (state.isActive()) state.setModel(result.model.provider, result.model.modelId);
           saveGlobalModel(result.model.provider, result.model.modelId);
         }
-        if (result?.sensitivity) {
-          if (state.isActive()) state.setSensitivity(result.sensitivity);
-          saveGlobalSensitivity(result.sensitivity);
-        }
         if (result?.widget !== undefined && result.widget !== isWidgetVisible()) toggleWidget();
-        if (result?.action === "stop" && state.isActive()) { state.stop(); idleSteers = 0; }
+        if (result?.action === "stop" && state.isActive()) { 
+          state.stop(); 
+          idleSteers = 0; 
+          disposeSession();
+        }
         updateUI(ctx, state.getState());
         return;
       }
@@ -276,33 +279,14 @@ export default function (pi: ExtensionAPI) {
         return;
       }
 
-      if (trimmed.startsWith("sensitivity ")) {
-        const level = trimmed.slice(12).trim() as Sensitivity;
-        if (level !== "low" && level !== "medium" && level !== "high") {
-          ctx.ui.notify("Usage: /supervise sensitivity <low|medium|high>", "warning");
-          return;
-        }
-        saveGlobalSensitivity(level);
-        if (!state.isActive()) {
-          ctx.ui.notify(`Sensitivity set to "${level}" · saved globally (takes effect on next /supervise).`, "info");
-        } else {
-          state.setSensitivity(level);
-          updateUI(ctx, state.getState());
-          ctx.ui.notify(`Supervisor sensitivity set to "${level}" · saved globally`, "info");
-        }
-        return;
-      }
-
       // --- interactive settings panel ---
 
       if (!trimmed || trimmed === "settings") {
         const s = state.getState();
         const globalModel = loadGlobalModel();
-        const globalSensitivity = loadGlobalSensitivity();
         const sessionModel = ctx.model;
         const defaultProvider = s?.provider ?? globalModel?.provider ?? sessionModel?.provider ?? DEFAULT_PROVIDER;
         const defaultModelId = s?.modelId ?? globalModel?.modelId ?? sessionModel?.id ?? DEFAULT_MODEL_ID;
-        const defaultSensitivity = s?.sensitivity ?? globalSensitivity ?? DEFAULT_SENSITIVITY;
 
         // Check if there's conversation history and no active supervision
         const hasConversation = !s?.active && hasUserMessages(ctx);
@@ -332,7 +316,7 @@ export default function (pi: ExtensionAPI) {
               // Fall through to settings panel
             } else {
               // Start supervision immediately with inferred outcome and global settings
-              state.start(inferred, defaultProvider, defaultModelId, defaultSensitivity);
+              state.start(inferred, defaultProvider, defaultModelId);
               idleSteers = 0;
               updateUI(ctx, state.getState());
 
@@ -348,7 +332,7 @@ export default function (pi: ExtensionAPI) {
           // If "Open settings panel" or inference failed, fall through
         }
 
-        const result = await openSettings(ctx, s, defaultProvider, defaultModelId, defaultSensitivity);
+        const result = await openSettings(ctx, s, defaultProvider, defaultModelId);
         if (!result) return; // user cancelled with no changes
 
         // Apply model change
@@ -364,15 +348,6 @@ export default function (pi: ExtensionAPI) {
           );
         }
 
-        // Apply sensitivity change
-        if (result.sensitivity) {
-          if (state.isActive()) {
-            state.setSensitivity(result.sensitivity);
-          }
-          saveGlobalSensitivity(result.sensitivity);
-          ctx.ui.notify(`Supervisor sensitivity set to "${result.sensitivity}" · saved globally`, "info");
-        }
-
         // Apply widget toggle
         if (result.widget !== undefined) {
           const currentlyVisible = isWidgetVisible();
@@ -385,6 +360,7 @@ export default function (pi: ExtensionAPI) {
         if (result.action === "stop" && state.isActive()) {
           state.stop();
           idleSteers = 0;
+          disposeSession();
           ctx.ui.notify("Supervisor stopped.", "info");
         }
 
@@ -395,11 +371,9 @@ export default function (pi: ExtensionAPI) {
       // Resolve model settings: session state → global config → active session model → built-in defaults
       const existing = state.getState();
       const globalModel = loadGlobalModel();
-      const globalSensitivity = loadGlobalSensitivity();
       const sessionModel = ctx.model;
       let provider = existing?.provider ?? globalModel?.provider ?? sessionModel?.provider ?? DEFAULT_PROVIDER;
       let modelId  = existing?.modelId  ?? globalModel?.modelId  ?? sessionModel?.id      ?? DEFAULT_MODEL_ID;
-      const sensitivity = existing?.sensitivity ?? globalSensitivity ?? DEFAULT_SENSITIVITY;
 
       // Only prompt for a model if none has been configured yet
       if (!existing) {
@@ -413,7 +387,7 @@ export default function (pi: ExtensionAPI) {
         }
       }
 
-      state.start(trimmed, provider, modelId, sensitivity);
+      state.start(trimmed, provider, modelId);
       idleSteers = 0;
       updateUI(ctx, state.getState());
 
@@ -441,15 +415,6 @@ export default function (pi: ExtensionAPI) {
           "The desired end-state to supervise toward. Be specific and measurable " +
           "(e.g. 'Implement JWT auth with refresh tokens and full test coverage').",
       }),
-      sensitivity: Type.Optional(Type.Union([
-        Type.Literal("low"),
-        Type.Literal("medium"),
-        Type.Literal("high"),
-      ], {
-        description:
-          "How aggressively to steer. low = only when seriously off track, " +
-          "medium = on mild drift (default), high = proactively + mid-turn checks.",
-      })),
       model: Type.Optional(Type.String({
         description:
           "Supervisor model as 'provider/modelId' (e.g. 'anthropic/claude-haiku-4-5-20251001'). " +
@@ -469,10 +434,6 @@ export default function (pi: ExtensionAPI) {
         );
       }
 
-      // Resolve sensitivity
-      const globalSensitivity = loadGlobalSensitivity();
-      const sensitivity: Sensitivity = params.sensitivity ?? globalSensitivity ?? DEFAULT_SENSITIVITY;
-
       // Resolve model: tool param → global config → active session model → built-in default
       let provider: string;
       let modelId: string;
@@ -487,7 +448,7 @@ export default function (pi: ExtensionAPI) {
         modelId  = globalModel?.modelId  ?? sessionModel?.id      ?? DEFAULT_MODEL_ID;
       }
 
-      state.start(params.outcome, provider, modelId, sensitivity);
+      state.start(params.outcome, provider, modelId);
       idleSteers = 0;
       currentCtx = ctx;
       updateUI(ctx, state.getState());
@@ -497,11 +458,11 @@ export default function (pi: ExtensionAPI) {
 
       // Notify the user so they're aware supervision was initiated by the model
       ctx.ui.notify(
-        `Supervisor started by agent: "${params.outcome.slice(0, 60)}${params.outcome.length > 60 ? "…" : ""}" | ${provider}/${modelId} | sensitivity: ${sensitivity} | ${promptLabel}`,
+        `Supervisor started by agent: "${params.outcome.slice(0, 60)}${params.outcome.length > 60 ? "…" : ""}" | ${provider}/${modelId} | ${promptLabel}`,
         "info"
       );
 
-      return text(`Supervision active. Outcome: "${params.outcome}" | ${provider}/${modelId} | sensitivity: ${sensitivity}`);
+      return text(`Supervision active. Outcome: "${params.outcome}" | ${provider}/${modelId}`);
     },
   });
 }

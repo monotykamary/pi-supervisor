@@ -2,7 +2,6 @@
  * Core types for the pi-supervisor extension.
  */
 
-export type Sensitivity = "low" | "medium" | "high";
 export type SupervisorAction = "continue" | "steer" | "done";
 
 /** A single intervention record */
@@ -19,10 +18,13 @@ export interface SupervisorState {
   outcome: string;
   provider: string;          // e.g. "anthropic"
   modelId: string;           // e.g. "claude-haiku-4-5-20251001"
-  sensitivity: Sensitivity;
   interventions: SupervisorIntervention[];
   startedAt: number;
   turnCount: number;
+  // Incremental snapshot buffer (not persisted, rebuilt on load)
+  snapshotBuffer?: ConversationMessage[];
+  lastAnalyzedTurn?: number;
+  justSteered?: boolean;     // flag to check if steer worked
 }
 
 /** Decision returned by the supervisor LLM */

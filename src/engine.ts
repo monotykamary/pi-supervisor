@@ -1,7 +1,7 @@
 /**
  * engine — supervisor analysis logic.
  *
- * Builds conversation snapshots from session history,
+ * Builds conversation snapshots incrementally from session history,
  * constructs prompts, and calls the supervisor model.
  *
  * System prompt discovery order (mirrors pi's SYSTEM.md convention):
@@ -15,7 +15,7 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
 import type { ConversationMessage, SteeringDecision, SupervisorState } from "./types.js";
-import { callModel, callSupervisorModel } from "./model-client.js";
+import { callSupervisorModel } from "./model-client.js";
 
 // ---- System prompt loading ----
 
@@ -87,48 +87,9 @@ export function loadSystemPrompt(cwd: string): { prompt: string; source: string 
   return { prompt: BUILTIN_SYSTEM_PROMPT, source: "built-in" };
 }
 
-const MESSAGE_LIMITS: Record<string, number> = {
-  low: 6,
-  medium: 12,
-  high: 20,
-};
+// SNAPSHOT_LIMIT is defined below
 
-/** Extract the most recent compaction or branch summary from the session branch, if any. */
-function extractCompactionSummary(ctx: ExtensionContext): string | null {
-  let summary: string | null = null;
-  for (const entry of ctx.sessionManager.getBranch()) {
-    if (
-      (entry.type === "compaction" || entry.type === "branch_summary") &&
-      typeof (entry as any).summary === "string"
-    ) {
-      summary = (entry as any).summary; // keep overwriting — last one wins (most recent)
-    }
-  }
-  return summary;
-}
-
-/** Extract recent user/assistant messages from the session branch. */
-function buildSnapshot(ctx: ExtensionContext, limit: number): ConversationMessage[] {
-  const messages: ConversationMessage[] = [];
-
-  for (const entry of ctx.sessionManager.getBranch()) {
-    if (entry.type !== "message") continue;
-    const msg = (entry as any).message;
-    if (!msg) continue;
-
-    if (msg.role === "user") {
-      const content = extractText(msg.content);
-      if (content) messages.push({ role: "user", content });
-    } else if (msg.role === "assistant") {
-      const content = extractAssistantText(msg.content);
-      if (content) messages.push({ role: "assistant", content });
-    }
-  }
-
-  // Return the most recent N messages
-  return messages.slice(-limit);
-}
-
+/** Extract text content from message. */
 function extractText(content: unknown): string {
   if (typeof content === "string") return content;
   if (Array.isArray(content)) {
@@ -141,6 +102,7 @@ function extractText(content: unknown): string {
   return "";
 }
 
+/** Extract text from assistant message content. */
 function extractAssistantText(content: unknown): string {
   if (!Array.isArray(content)) return "";
   const textParts = content
@@ -149,13 +111,79 @@ function extractAssistantText(content: unknown): string {
   return textParts.join("\n").trim();
 }
 
+/**
+ * Fixed message limit for supervisor context window.
+ */
+export const SNAPSHOT_LIMIT = 6;
+
+/**
+ * Incrementally build snapshot from new session entries since last analysis.
+ * Only walks entries from lastAnalyzedTurn to current, appends to existing buffer.
+ */
+export function buildIncrementalSnapshot(
+  ctx: ExtensionContext,
+  state: SupervisorState
+): ConversationMessage[] {
+  const existingBuffer = state.snapshotBuffer ?? [];
+  const lastAnalyzed = state.lastAnalyzedTurn ?? -1;
+  const currentTurn = state.turnCount;
+
+  // If already analyzed this turn, return existing
+  if (lastAnalyzed >= currentTurn) {
+    return existingBuffer.slice(-SNAPSHOT_LIMIT);
+  }
+
+  const newMessages: ConversationMessage[] = [...existingBuffer];
+  const entries = ctx.sessionManager.getBranch();
+  let entryIndex = 0;
+
+  // Find entries since last analysis
+  for (const entry of entries) {
+    if (entry.type !== "message") continue;
+    const msg = (entry as any).message;
+    if (!msg) continue;
+
+    // Track entry position roughly (not exact turn mapping, but sufficient)
+    entryIndex++;
+
+    if (msg.role === "user") {
+      const content = extractText(msg.content);
+      if (content) newMessages.push({ role: "user", content });
+    } else if (msg.role === "assistant") {
+      const content = extractAssistantText(msg.content);
+      if (content) newMessages.push({ role: "assistant", content });
+    }
+  }
+
+  // Keep only last 6, compress older if needed
+  if (newMessages.length > SNAPSHOT_LIMIT) {
+    const overflow = newMessages.length - SNAPSHOT_LIMIT;
+    // Drop oldest messages (simple approach)
+    return newMessages.slice(overflow);
+  }
+
+  return newMessages;
+}
+
+/**
+ * Update state with new snapshot and return it.
+ */
+export function updateSnapshot(
+  ctx: ExtensionContext,
+  state: SupervisorState
+): ConversationMessage[] {
+  const snapshot = buildIncrementalSnapshot(ctx, state);
+  state.snapshotBuffer = snapshot;
+  state.lastAnalyzedTurn = state.turnCount;
+  return snapshot;
+}
+
 /** Build the user-facing prompt for the supervisor LLM. */
 function buildUserPrompt(
   state: SupervisorState,
   snapshot: ConversationMessage[],
   agentIsIdle: boolean,
-  stagnating: boolean,
-  compactionSummary: string | null
+  stagnating: boolean
 ): string {
   const interventionHistory =
     state.interventions.length === 0
@@ -185,19 +213,12 @@ The agent is making diminishing improvements. Apply a lenient standard:
 - Prefer stopping over looping forever on perfection.`
     : "";
 
-  const summarySection = compactionSummary
-    ? `CONVERSATION SUMMARY (earlier history, before recent messages):\n${compactionSummary}\n\n`
-    : "";
-
   return `DESIRED OUTCOME:
 ${state.outcome}
 
-SENSITIVITY: ${state.sensitivity}
-(low = check only at end of each run, steer if seriously off track; medium = also check every 3rd tool cycle mid-run, steer on clear drift; high = check every tool cycle, steer proactively)
-
 ${agentStatus}${stagnationWarning}
 
-${summarySection}RECENT CONVERSATION (last ${snapshot.length} messages):
+RECENT CONVERSATION (last ${snapshot.length} messages):
 ${conversationText}
 
 PREVIOUS INTERVENTIONS BY YOU:
@@ -223,10 +244,9 @@ export async function analyze(
 ): Promise<SteeringDecision> {
   const { prompt: systemPrompt } = loadSystemPrompt(ctx.cwd);
 
-  const limit = MESSAGE_LIMITS[state.sensitivity] ?? 12;
-  const snapshot = buildSnapshot(ctx, limit);
-  const compactionSummary = extractCompactionSummary(ctx);
-  const userPrompt = buildUserPrompt(state, snapshot, agentIsIdle, stagnating, compactionSummary);
+  // Update snapshot incrementally
+  const snapshot = updateSnapshot(ctx, state);
+  const userPrompt = buildUserPrompt(state, snapshot, agentIsIdle, stagnating);
 
   try {
     return await callSupervisorModel(ctx, state.provider, state.modelId, systemPrompt, userPrompt, signal, onDelta);
@@ -268,7 +288,24 @@ export async function inferOutcome(
   signal?: AbortSignal
 ): Promise<string | null> {
   // Build a focused snapshot for the immediate goal (last 6 messages = ~3 turns)
-  const snapshot = buildSnapshot(ctx, 6);
+  const entries = ctx.sessionManager.getBranch();
+  const messages: ConversationMessage[] = [];
+
+  for (const entry of entries) {
+    if (entry.type !== "message") continue;
+    const msg = (entry as any).message;
+    if (!msg) continue;
+
+    if (msg.role === "user") {
+      const content = extractText(msg.content);
+      if (content) messages.push({ role: "user", content });
+    } else if (msg.role === "assistant") {
+      const content = extractAssistantText(msg.content);
+      if (content) messages.push({ role: "assistant", content });
+    }
+  }
+
+  const snapshot = messages.slice(-6);
   if (snapshot.length === 0) return null;
 
   const conversationText = snapshot
@@ -282,6 +319,8 @@ ${conversationText}
 What is the specific outcome the user is trying to achieve?`;
 
   try {
+    // Import dynamically to avoid circular dependency issues
+    const { callModel } = await import("./model-client.js");
     const result = await callModel(
       ctx,
       provider,

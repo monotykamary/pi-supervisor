@@ -23,17 +23,24 @@
     "productivity"
   ],
   "dependencies": {
+    "@mariozechner/pi-ai": "latest",
     "@mariozechner/pi-coding-agent": "latest",
     "@mariozechner/pi-tui": "latest",
-    "@mariozechner/pi-ai": "latest",
     "@sinclair/typebox": "latest"
   },
   "devDependencies": {
+    "@types/node": "^20.0.0",
     "typescript": "^5.0.0",
-    "@types/node": "^20.0.0"
+    "vitest": "^2.1.9"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "pi": {
-    "extensions": ["./src/index.ts"],
+    "extensions": [
+      "./src/index.ts"
+    ],
     "video": "https://github.com/tintinweb/pi-supervisor/raw/master/media/demo.mp4",
     "image": "https://github.com/tintinweb/pi-supervisor/raw/master/media/screenshot.png"
   }
