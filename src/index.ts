@@ -12,8 +12,6 @@
  *   /supervise <outcome>    — start supervising with explicit goal
  *   /supervise stop         — stop supervising
  *   /supervise widget       — toggle the status widget on/off
- *   /supervise model        — open the interactive model picker
- *   /supervise model <p/m>  — set supervisor model directly
  */
 
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
@@ -202,54 +200,6 @@ export default function (pi: ExtensionAPI) {
         disposeSession();
         updateUI(ctx, state.getState());
         ctx.ui.notify("Supervisor stopped.", "info");
-        return;
-      }
-
-      if (trimmed === "model" || trimmed.startsWith("model ")) {
-        const spec = trimmed.slice(5).trim(); // "" when no args
-
-        if (!spec) {
-          // No args → open the interactive pi-style model picker
-          const s = state.getState();
-          const picked = await pickModel(ctx, s?.provider, s?.modelId);
-          if (!picked) return; // user cancelled
-
-          const provider = picked.provider;
-          const modelId = picked.id;
-
-          if (state.isActive()) {
-            state.setModel(provider, modelId);
-            updateUI(ctx, state.getState());
-          }
-          saveGlobalModel(provider, modelId);
-          ctx.ui.notify(
-            `Supervisor model set to ${provider}/${modelId}${state.isActive() ? "" : " (takes effect on next /supervise)"} · saved globally`,
-            "info"
-          );
-          return;
-        }
-
-        // Args provided → direct assignment (for scripting)
-        const slashIdx = spec.indexOf("/");
-        let provider: string;
-        let modelId: string;
-        if (slashIdx === -1) {
-          provider = state.getState()?.provider ?? DEFAULT_PROVIDER;
-          modelId = spec;
-        } else {
-          provider = spec.slice(0, slashIdx);
-          modelId = spec.slice(slashIdx + 1);
-        }
-
-        if (state.isActive()) {
-          state.setModel(provider, modelId);
-          updateUI(ctx, state.getState());
-        }
-        saveGlobalModel(provider, modelId);
-        ctx.ui.notify(
-          `Supervisor model set to ${provider}/${modelId}${state.isActive() ? "" : " (takes effect on next /supervise)"} · saved globally`,
-          "info"
-        );
         return;
       }
 

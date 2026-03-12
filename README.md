@@ -48,16 +48,11 @@ pi -e ~/projects/pi-supervisor/src/index.ts
 | `/supervise <outcome>` | Start supervising with explicit goal |
 | `/supervise stop` | Stop active supervision |
 | `/supervise widget` | Toggle the status widget on/off |
-| `/supervise model` | Open the interactive model picker |
-| `/supervise model <provider/modelId>` | Set supervisor model directly |
 
 ### Examples
 
 ```
 /supervise Refactor the auth module to use dependency injection and add 90% test coverage
-
-/supervise model
-# Opens pi's model selector — pick any model with a configured API key
 
 /supervise stop
 ```
@@ -111,11 +106,11 @@ The supervisor runs on a **separate model** — it can be a cheaper/faster model
 
 **Resolution order:**
 1. Previous session state (persists within a session)
-2. `.pi/supervisor-config.json` in the project root (saved by `/supervise model`)
+2. `.pi/supervisor-config.json` in the project root (saved via settings panel)
 3. Active chat model (`ctx.model`) — so it works out of the box with no configuration
 4. Built-in default: `anthropic/claude-haiku-4-5-20251001`
 
-Change at any time with `/supervise model` (interactive picker) or `/supervise model <provider/id>` (direct). The selection is saved to `.pi/supervisor-config.json` if the `.pi/` directory exists.
+Change at any time through the settings panel (run `/supervise` and select **Model**). The selection is saved to `.pi/supervisor-config.json` if the `.pi/` directory exists.
 
 ## Focus and Goal Discipline
 
