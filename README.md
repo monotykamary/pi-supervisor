@@ -6,7 +6,7 @@ A [pi](https://pi.dev) extension that supervises the coding agent and steers it 
 
 > **Status:** Early release.
 
-<img height="298" alt="image" src="https://github.com/tintinweb/pi-supervisor/raw/master/media/screenshot.png" />
+<img height="298" alt="image" src="https://github.com/monotykamary/pi-supervisor/raw/master/media/screenshot.png" />
 
 https://github.com/user-attachments/assets/f3b23662-6473-4ac3-82f7-c7f9b34fa7c7
 
@@ -31,7 +31,7 @@ The supervisor is a pure outside observer. It runs in a separate in-memory pi se
 ## Install
 
 ```bash
-pi install npm:pi-supervisor
+pi install git:github.com/monotykamary/pi-supervisor@master
 ```
 
 Or load directly for development:
@@ -244,4 +244,4 @@ src/
 
 ## License
 
-MIT — [tintinweb](https://github.com/tintinweb)
+MIT — [tintinweb](https://github.com/tintinweb) (forked by [monotykamary](https://github.com/monotykamary))

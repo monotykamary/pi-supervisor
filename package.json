@@ -1,16 +1,16 @@
 {
   "name": "pi-supervisor",
-  "version": "0.4.2",
+  "version": "0.5.0",
   "description": "A pi extension that supervises the chat and steers it towards a defined outcome",
-  "author": "tintinweb",
+  "author": "tintinweb (forked by monotykamary)",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/tintinweb/pi-supervisor.git"
+    "url": "git+https://github.com/monotykamary/pi-supervisor.git"
   },
-  "homepage": "https://github.com/tintinweb/pi-supervisor#readme",
+  "homepage": "https://github.com/monotykamary/pi-supervisor#readme",
   "bugs": {
-    "url": "https://github.com/tintinweb/pi-supervisor/issues"
+    "url": "https://github.com/monotykamary/pi-supervisor/issues"
   },
   "keywords": [
     "pi-package",
@@ -22,6 +22,16 @@
     "agent",
     "productivity"
   ],
+  "files": [
+    "src/**/*.ts",
+    "tests/**/*.ts",
+    "vitest.config.ts",
+    "tsconfig.json",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "media/"
+  ],
   "dependencies": {
     "@mariozechner/pi-ai": "latest",
     "@mariozechner/pi-coding-agent": "latest",
@@ -30,18 +40,21 @@
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
+    "standard-version": "^9.5.0",
     "typescript": "^5.0.0",
     "vitest": "^2.1.9"
   },
   "scripts": {
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "release": "standard-version",
+    "release:dry-run": "standard-version --dry-run"
   },
   "pi": {
     "extensions": [
       "./src/index.ts"
     ],
-    "video": "https://github.com/tintinweb/pi-supervisor/raw/master/media/demo.mp4",
-    "image": "https://github.com/tintinweb/pi-supervisor/raw/master/media/screenshot.png"
+    "video": "https://github.com/monotykamary/pi-supervisor/raw/master/media/demo.mp4",
+    "image": "https://github.com/monotykamary/pi-supervisor/raw/master/media/screenshot.png"
   }
 }
