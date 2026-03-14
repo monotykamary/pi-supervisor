@@ -35,7 +35,8 @@ export type WidgetAction =
   | { type: "watching"; reframeTier?: number }
   | { type: "analyzing"; turn: number; reframeTier?: number; thinking?: string }
   | { type: "steering"; message: string; reframeTier?: number }
-  | { type: "done"; reframeTier?: number };
+  | { type: "done"; reframeTier?: number }
+  | { type: "waiting"; message: string; turn: number; reframeTier?: number };
 
 function truncate(s: string, max: number): string {
   return s.length <= max ? s : s.slice(0, max - 1) + "…";
@@ -104,6 +105,9 @@ export function updateUI(
         break;
       case "done":
         actionStr = theme.fg("accent", "✓ done");
+        break;
+      case "waiting":
+        actionStr = theme.fg("warning", `⏳ ${snapAction.message}`);
         break;
     }
 

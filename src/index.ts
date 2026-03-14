@@ -26,6 +26,7 @@ import {
 } from "./global-config.js";
 import { disposeSession } from "./model-client.js";
 import { Type } from "@sinclair/typebox";
+import { checkChildPiProcesses, waitForSubagents } from "./subagent-detector.js";
 
 /**
  * Extract partial reasoning text from the supervisor's streaming JSON response.
@@ -136,6 +137,29 @@ export default function (pi: ExtensionAPI) {
 
     state.incrementTurnCount();
     const s = state.getState()!;
+
+    // Check for child subagent processes (extension-agnostic via process inspection)
+    const subagentStatus = await checkChildPiProcesses();
+    if (subagentStatus.hasActiveSubagents) {
+      updateUI(ctx, s, {
+        type: "waiting",
+        message: `Waiting for ${subagentStatus.count} subagent(s)...`,
+        turn: s.turnCount,
+        reframeTier: state.getReframeTier()
+      });
+
+      // Poll until subagents complete (or timeout)
+      const { completed, finalStatus } = await waitForSubagents(2000, 120000);
+
+      if (!completed && finalStatus.hasActiveSubagents) {
+        // Timeout - subagents still running, but we need to proceed
+        // Log this but continue with analysis
+        ctx.ui.notify(`Supervisor: ${finalStatus.count} subagent(s) still running after timeout, proceeding with analysis`, "warning");
+      }
+
+      // Subagents done (or timed out), update UI and proceed
+      updateUI(ctx, s, { type: "analyzing", turn: s.turnCount, reframeTier: state.getReframeTier() });
+    }
 
     // Check for ineffective steering patterns and escalate reframe tier if needed
     const ineffectivePattern = state.detectIneffectivePattern();
