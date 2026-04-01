@@ -14,11 +14,17 @@ import type { SupervisorIntervention, SupervisorState } from '../types.js';
 
 const WIDGET_ID = 'supervisor';
 const STATUS_ID = 'supervisor';
+const CLEAR_DELAY_MS = 15000;
+const ANIMATION_STEP_MS = 500;
 
 let _widgetVisible = true;
 let _clearTimer: ReturnType<typeof setTimeout> | null = null;
+let _animationTimer: ReturnType<typeof setTimeout> | null = null;
 let _lastActiveState: { outcome: string; interventions: SupervisorIntervention[] } | null = null;
 let _lastThinking = '';
+let _lastActionType: WidgetAction['type'] = 'watching';
+let _animatedLines: string[] = [];
+let _animationStep = 0;
 
 /** Toggle the widget on/off. Returns the new visibility state. */
 export function toggleWidget(): boolean {
@@ -37,36 +43,46 @@ export type WidgetAction =
   | { type: 'done'; reframeTier?: number }
   | { type: 'waiting'; message: string; turn: number; reframeTier?: number };
 
-// Text truncation is now handled dynamically by truncateToWidth based on window width
-
 /**
  * Update footer + widget. Call this every time state or action changes.
- * Clears both when state is null or inactive, with a 5-second delay to
- * allow reading the final thinking text.
+ * Clears both when state is null or inactive, with a 15-second delay and
+ * line-by-line animation for clearing thoughts.
  */
 export function updateUI(
   ctx: ExtensionContext,
   state: SupervisorState | null,
   action: WidgetAction = { type: 'watching' }
 ): void {
-  // Cancel any pending clear timer when state updates
+  // Cancel any pending timers when state updates
   if (_clearTimer) {
     clearTimeout(_clearTimer);
     _clearTimer = null;
   }
+  if (_animationTimer) {
+    clearTimeout(_animationTimer);
+    _animationTimer = null;
+  }
+  // Reset animation state
+  _animatedLines = [];
+  _animationStep = 0;
 
   if (!state || !state.active) {
-    // State became inactive - keep showing last state for 5 seconds
+    // State became inactive - start animation after delay
     if (_lastActiveState) {
       _clearTimer = setTimeout(() => {
-        _lastActiveState = null;
-        _lastThinking = '';
-        ctx.ui.setStatus(STATUS_ID, undefined);
-        ctx.ui.setWidget(WIDGET_ID, undefined);
-      }, 30000);
-      // Continue rendering with last known state (use 'done' as fallback action with completed status)
+        startClearAnimation(ctx);
+      }, CLEAR_DELAY_MS);
+      // Continue rendering with last known state
       const fallbackAction: WidgetAction = { type: 'done', reframeTier: 0 };
-      renderWithState(ctx, _lastActiveState, fallbackAction, _lastThinking);
+      _lastActionType = 'done';
+      renderWithState(
+        ctx,
+        _lastActiveState,
+        fallbackAction,
+        _lastThinking,
+        _animatedLines,
+        _animationStep
+      );
       return;
     }
     // No previous state to show, clear immediately
@@ -80,6 +96,7 @@ export function updateUI(
     outcome: state.outcome,
     interventions: [...state.interventions],
   };
+  _lastActionType = action.type;
   if (action.type === 'analyzing' && action.thinking) {
     _lastThinking = action.thinking;
   }
@@ -91,14 +108,87 @@ export function updateUI(
     return;
   }
 
-  renderWithState(ctx, _lastActiveState, action, _lastThinking);
+  renderWithState(ctx, _lastActiveState, action, _lastThinking, _animatedLines, _animationStep);
+}
+
+/** Start the line-by-line clear animation */
+function startClearAnimation(ctx: ExtensionContext): void {
+  if (!_lastActiveState) return;
+
+  const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, '');
+  const thinkingPrefix = '  ';
+  const paddedWidth = 80;
+
+  // Calculate wrapped thinking lines
+  const thinkingWords = _lastThinking.split(' ');
+  const thinkingLines: string[] = [];
+  let currentLine = '';
+
+  for (const word of thinkingWords) {
+    const testLine = currentLine ? `${currentLine} ${word}` : word;
+    if (stripAnsi(testLine).length <= paddedWidth - thinkingPrefix.length) {
+      currentLine = testLine;
+    } else {
+      if (currentLine) thinkingLines.push(currentLine);
+      currentLine = word;
+    }
+  }
+  if (currentLine) thinkingLines.push(currentLine);
+
+  const isSteering = _lastActionType === 'steering';
+  const totalLines = isSteering ? Math.max(0, thinkingLines.length - 1) : thinkingLines.length;
+
+  const animateStep = (step: number) => {
+    _animationStep = step;
+
+    if (step >= totalLines) {
+      if (isSteering && thinkingLines.length > 0) {
+        // Keep last line truncated for steering mode
+        const lastLine = thinkingLines[thinkingLines.length - 1];
+        const truncated =
+          truncateToWidth(lastLine, paddedWidth - thinkingPrefix.length - 3) + '...';
+        _animatedLines = [thinkingPrefix + truncated];
+        _lastThinking = _animatedLines[0];
+        renderWithState(
+          ctx,
+          _lastActiveState!,
+          { type: 'steering', message: '', reframeTier: 0 },
+          _lastThinking,
+          _animatedLines,
+          step
+        );
+        return;
+      } else {
+        // Done state - clear everything after animation
+        _lastActiveState = null;
+        _lastThinking = '';
+        _animatedLines = [];
+        ctx.ui.setStatus(STATUS_ID, undefined);
+        ctx.ui.setWidget(WIDGET_ID, undefined);
+        return;
+      }
+    }
+
+    // Build progressively emptying lines (from top, keeping bottom)
+    _animatedLines = thinkingLines.slice(step).map((line) => '  ' + line);
+    const fallbackAction: WidgetAction = isSteering
+      ? { type: 'steering', message: '', reframeTier: 0 }
+      : { type: 'done', reframeTier: 0 };
+    renderWithState(ctx, _lastActiveState!, fallbackAction, _lastThinking, _animatedLines, step);
+
+    _animationTimer = setTimeout(() => animateStep(step + 1), ANIMATION_STEP_MS);
+  };
+
+  animateStep(0);
 }
 
 function renderWithState(
   ctx: ExtensionContext,
   snap: { outcome: string; interventions: SupervisorIntervention[] },
   action: WidgetAction,
-  lastThinking: string
+  lastThinking: string,
+  animatedLines: string[] = [],
+  animationStep: number = 0
 ): void {
   ctx.ui.setWidget(WIDGET_ID, (_tui, theme) => {
     // Current action
@@ -140,7 +230,7 @@ function renderWithState(
     const suffixParts = [steers, reframeStr, actionStr].filter(Boolean);
 
     const thinkingPrefix = theme.fg('dim', '  ');
-    const rawThinking = thinking;
+    const rawThinking = animatedLines.length > 0 ? '' : thinking;
 
     return {
       render: (width: number) => {
@@ -171,11 +261,16 @@ function renderWithState(
         const line = prefix + goalText + goalQuoteClose + suffix;
         const l1 = truncateToWidth(line, paddedWidth);
 
+        // If animating, show the progressively cleared lines
+        if (animatedLines.length > 0) {
+          const dimAnimatedLines = animatedLines.map((line) => theme.fg('dim', line));
+          return [l1, ...dimAnimatedLines];
+        }
+
         if (!rawThinking) return [l1];
 
         // Wrap thinking text naturally into multiple lines with dim color
         const thinkingIndent = stripAnsi(thinkingPrefix).length;
-        const dimThinking = theme.fg('dim', rawThinking);
         const thinkingWords = rawThinking.split(' ');
         const thinkingLines: string[] = [];
         let currentThinkingLine = '';
