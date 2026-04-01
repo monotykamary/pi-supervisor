@@ -63,8 +63,33 @@ export interface SteeringDecision {
   asi?: InterventionASI;
 }
 
-/** A simplified message for building the supervisor context */
+/** Content block types for rich message capture */
+export type ContentBlock =
+  | { type: 'text'; text: string }
+  | { type: 'image'; source: string; mimeType?: string }
+  | { type: 'tool_call'; id: string; name: string; input: Record<string, unknown> }
+  | {
+      type: 'tool_result';
+      toolCallId: string;
+      content: (ContentBlock | string)[];
+      isError?: boolean;
+    };
+
+/** A simplified message for building the supervisor context - now with full tool support */
 export interface ConversationMessage {
-  role: 'user' | 'assistant';
+  role: 'user' | 'assistant' | 'tool_results';
   content: string;
+  /** Rich content blocks for full fidelity capture (images, tool calls, tool results) */
+  blocks?: ContentBlock[];
+  /** Raw tool results associated with this turn (for assistant messages) */
+  toolResults?: ToolResultEntry[];
+}
+
+/** Captured tool result entry */
+export interface ToolResultEntry {
+  toolCallId: string;
+  toolName: string;
+  input: Record<string, unknown>;
+  content: ContentBlock[];
+  isError: boolean;
 }
