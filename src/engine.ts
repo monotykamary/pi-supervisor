@@ -22,7 +22,7 @@ import type {
   ContentBlock,
   ToolResultEntry,
 } from './types.js';
-import { callSupervisorModel } from './model-client.js';
+import { callSupervisorModel, SupervisorSession } from './model-client.js';
 
 // ---- System prompt loading ----
 
@@ -667,16 +667,20 @@ ${conversationText}
 What is the specific outcome the user is trying to achieve?`;
 
   try {
-    // Import dynamically to avoid circular dependency issues
-    const { callModel } = await import('./model-client.js');
-    const result = await callModel(
+    // Use fresh SupervisorSession (not callSupervisorModel) to avoid
+    // interfering with the global supervision session
+    const session = new SupervisorSession();
+    const started = await session.ensureStarted(
       ctx,
       provider,
       modelId,
-      INFER_OUTCOME_SYSTEM_PROMPT,
-      userPrompt,
-      signal
+      INFER_OUTCOME_SYSTEM_PROMPT
     );
+    if (!started) return null;
+
+    const result = await session.prompt(userPrompt, signal);
+    session.dispose();
+
     if (!result) return null;
     // Clean up the result: remove quotes, trim whitespace, limit length
     return result

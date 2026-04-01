@@ -1,12 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
-import {
-  loadSystemPrompt,
-  SNAPSHOT_LIMIT,
-  updateSnapshot,
-  buildUserPrompt,
-  getReframeGuidance,
-  extractMetrics,
-} from '../src/engine.js';
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import type { SupervisorState } from '../src/types.js';
 
 // Mock fs for loadSystemPrompt tests
@@ -26,6 +18,20 @@ vi.mock('node:os', async () => {
 });
 
 import { existsSync, readFileSync } from 'node:fs';
+import {
+  loadSystemPrompt,
+  SNAPSHOT_LIMIT,
+  updateSnapshot,
+  buildUserPrompt,
+  getReframeGuidance,
+  extractMetrics,
+  inferOutcome,
+} from '../src/engine.js';
+import { SupervisorSession } from '../src/model-client.js';
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
 
 describe('loadSystemPrompt', () => {
   it('returns built-in prompt when no files exist', () => {
@@ -417,5 +423,196 @@ describe('extractMetrics', () => {
     const text = 'Test coverage: 87% and everything looks good';
     const result = extractMetrics(text);
     expect(result).toEqual({});
+  });
+});
+
+describe('inferOutcome', () => {
+  // Spy on SupervisorSession prototype methods
+  let ensureStartedSpy: ReturnType<typeof vi.spyOn>;
+  let promptSpy: ReturnType<typeof vi.spyOn>;
+  let disposeSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    // Create spies on the prototype methods
+    ensureStartedSpy = vi.spyOn(SupervisorSession.prototype, 'ensureStarted');
+    promptSpy = vi.spyOn(SupervisorSession.prototype, 'prompt');
+    disposeSpy = vi.spyOn(SupervisorSession.prototype, 'dispose');
+
+    // Set default success behavior
+    ensureStartedSpy.mockResolvedValue(true);
+    promptSpy.mockResolvedValue('Build auth system');
+  });
+
+  afterEach(() => {
+    // Restore original implementations
+    ensureStartedSpy.mockRestore();
+    promptSpy.mockRestore();
+    disposeSpy.mockRestore();
+  });
+
+  it('returns null when sessionManager has no branch entries', async () => {
+    const mockCtx = {
+      sessionManager: {
+        getBranch: () => [],
+      },
+      modelRegistry: {
+        find: () => ({ name: 'test-model' }),
+      },
+    } as any;
+
+    const result = await inferOutcome(mockCtx, 'anthropic', 'claude');
+    expect(result).toBeNull();
+  });
+
+  it('returns null when model not found in registry', async () => {
+    const mockCtx = {
+      sessionManager: {
+        getBranch: () => [{ type: 'message', message: { role: 'user', content: 'Hello' } }],
+      },
+      modelRegistry: {
+        find: () => null, // Model not found
+      },
+    } as any;
+
+    ensureStartedSpy.mockResolvedValue(false);
+
+    const result = await inferOutcome(mockCtx, 'anthropic', 'claude');
+    expect(result).toBeNull();
+  });
+
+  it('returns null when session fails to start', async () => {
+    const mockCtx = {
+      sessionManager: {
+        getBranch: () => [
+          {
+            type: 'message',
+            message: { role: 'user', content: [{ type: 'text', text: 'Build auth' }] },
+          },
+        ],
+      },
+      modelRegistry: {
+        find: () => ({ name: 'test-model' }),
+      },
+    } as any;
+
+    ensureStartedSpy.mockResolvedValue(false);
+
+    const result = await inferOutcome(mockCtx, 'anthropic', 'claude');
+    expect(result).toBeNull();
+  });
+
+  it('extracts outcome successfully', async () => {
+    const mockCtx = {
+      sessionManager: {
+        getBranch: () => [
+          {
+            type: 'message',
+            message: { role: 'user', content: [{ type: 'text', text: 'Build auth' }] },
+          },
+        ],
+      },
+      modelRegistry: {
+        find: () => ({ name: 'test-model' }),
+      },
+    } as any;
+
+    promptSpy.mockResolvedValue('Add JWT authentication with refresh tokens');
+
+    const result = await inferOutcome(mockCtx, 'anthropic', 'claude');
+
+    expect(result).toBe('Add JWT authentication with refresh tokens');
+  });
+
+  it('cleans up result: removes quotes, newlines, and limits length', async () => {
+    const mockCtx = {
+      sessionManager: {
+        getBranch: () => [
+          {
+            type: 'message',
+            message: { role: 'user', content: [{ type: 'text', text: 'Build auth' }] },
+          },
+        ],
+      },
+      modelRegistry: {
+        find: () => ({ name: 'test-model' }),
+      },
+    } as any;
+
+    promptSpy.mockResolvedValue('"Fix the\nbug in the handler"');
+
+    const result = await inferOutcome(mockCtx, 'anthropic', 'claude');
+
+    expect(result).toBe('Fix the bug in the handler'); // No quotes, newlines replaced with spaces
+    expect(result.length).toBeLessThanOrEqual(200);
+  });
+
+  it('returns null when prompt returns null', async () => {
+    const mockCtx = {
+      sessionManager: {
+        getBranch: () => [
+          {
+            type: 'message',
+            message: { role: 'user', content: [{ type: 'text', text: 'Build auth' }] },
+          },
+        ],
+      },
+      modelRegistry: {
+        find: () => ({ name: 'test-model' }),
+      },
+    } as any;
+
+    promptSpy.mockResolvedValue(null);
+
+    const result = await inferOutcome(mockCtx, 'anthropic', 'claude');
+
+    expect(result).toBeNull();
+  });
+
+  it('returns null when exception thrown', async () => {
+    const mockCtx = {
+      sessionManager: {
+        getBranch: () => [
+          {
+            type: 'message',
+            message: { role: 'user', content: [{ type: 'text', text: 'Build auth' }] },
+          },
+        ],
+      },
+      modelRegistry: {
+        find: () => ({ name: 'test-model' }),
+      },
+    } as any;
+
+    ensureStartedSpy.mockRejectedValue(new Error('Network error'));
+
+    const result = await inferOutcome(mockCtx, 'anthropic', 'claude');
+
+    expect(result).toBeNull();
+  });
+
+  it('uses goal extraction system prompt', async () => {
+    const mockCtx = {
+      sessionManager: {
+        getBranch: () => [
+          {
+            type: 'message',
+            message: { role: 'user', content: [{ type: 'text', text: 'Build auth' }] },
+          },
+        ],
+      },
+      modelRegistry: {
+        find: () => ({ name: 'test-model' }),
+      },
+    } as any;
+
+    await inferOutcome(mockCtx, 'anthropic', 'claude');
+
+    // Verify the system prompt passed to ensureStarted contains goal extraction content
+    expect(ensureStartedSpy).toHaveBeenCalledWith(
+      mockCtx,
+      'anthropic',
+      'claude',
+      expect.stringContaining('goal extraction')
+    );
   });
 });

@@ -1,7 +1,6 @@
 /**
  * model-client — calls the supervisor LLM using pi's internal agent session API.
  *
- * callModel        — low-level: returns raw response text
  * callSupervisorModel — high-level: parses response as SteeringDecision
  * SupervisorSession — reusable session for a single supervision goal
  */
@@ -119,70 +118,6 @@ export function getOrCreateSession(): SupervisorSession {
 export function disposeSession(): void {
   activeSession?.dispose();
   activeSession = null;
-}
-
-/**
- * Run a one-shot LLM call using pi's internal agent session.
- * Returns the raw response text, or null on failure.
- * @deprecated Use SupervisorSession for token efficiency
- */
-export async function callModel(
-  ctx: ExtensionContext,
-  provider: string,
-  modelId: string,
-  systemPrompt: string,
-  userPrompt: string,
-  signal?: AbortSignal,
-  onDelta?: (accumulated: string) => void
-): Promise<string | null> {
-  const model = ctx.modelRegistry.find(provider, modelId);
-  if (!model) return null;
-
-  const loader = new DefaultResourceLoader({
-    noExtensions: true,
-    noSkills: true,
-    noPromptTemplates: true,
-    noThemes: true,
-    systemPromptOverride: () => systemPrompt,
-  });
-  await loader.reload();
-
-  let session: Awaited<ReturnType<typeof createAgentSession>>['session'];
-  try {
-    const result = await createAgentSession({
-      sessionManager: SessionManager.inMemory(),
-      modelRegistry: ctx.modelRegistry,
-      model,
-      tools: [],
-      resourceLoader: loader,
-    });
-    session = result.session;
-  } catch {
-    return null;
-  }
-
-  const onAbort = () => session.abort();
-  signal?.addEventListener('abort', onAbort, { once: true });
-
-  let responseText = '';
-  const unsubscribe = session.subscribe((event) => {
-    if (event.type === 'message_update' && event.assistantMessageEvent.type === 'text_delta') {
-      responseText += event.assistantMessageEvent.delta;
-      onDelta?.(responseText);
-    }
-  });
-
-  try {
-    await session.prompt(userPrompt);
-  } catch {
-    return null;
-  } finally {
-    unsubscribe();
-    signal?.removeEventListener('abort', onAbort);
-    session.dispose();
-  }
-
-  return responseText;
 }
 
 /**
