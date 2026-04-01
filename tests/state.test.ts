@@ -238,19 +238,21 @@ describe('SupervisorStateManager', () => {
       expect(s!.justSteered).toBe(false);
     });
 
-    it('stops supervision and marks inactive', () => {
+    it('stops supervision and marks inactive and clears outcome', () => {
       const api = createMockApi();
       const state = new SupervisorStateManager(api);
 
       state.start('Test goal', 'anthropic', 'claude-haiku');
       expect(state.isActive()).toBe(true);
+      expect(state.getState()!.outcome).toBe('Test goal');
 
       state.stop();
       expect(state.isActive()).toBe(false);
       expect(state.getState()!.active).toBe(false);
+      expect(state.getState()!.outcome).toBe(''); // Goal cleared for fresh start
     });
 
-    it('persists state on start and stop', () => {
+    it('persists state on start and stop with cleared outcome', () => {
       const api = createMockApi();
       const state = new SupervisorStateManager(api);
 
@@ -268,7 +270,10 @@ describe('SupervisorStateManager', () => {
       expect(api.appendEntry).toHaveBeenCalledTimes(2);
       expect(api.appendEntry).toHaveBeenLastCalledWith(
         'supervisor-state',
-        expect.objectContaining({ active: false })
+        expect.objectContaining({
+          active: false,
+          outcome: '', // Goal cleared on stop
+        })
       );
     });
   });

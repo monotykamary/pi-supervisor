@@ -50,6 +50,7 @@ export class SupervisorStateManager {
   stop(): void {
     if (!this.state) return;
     this.state.active = false;
+    this.state.outcome = ''; // Clear the goal so /supervise starts fresh, not in append mode
     this.persist();
   }
 
