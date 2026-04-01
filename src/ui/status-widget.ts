@@ -10,12 +10,15 @@
 
 import type { ExtensionContext } from '@mariozechner/pi-coding-agent';
 import { truncateToWidth } from '@mariozechner/pi-tui';
-import type { SupervisorState } from '../types.js';
+import type { SupervisorIntervention, SupervisorState } from '../types.js';
 
 const WIDGET_ID = 'supervisor';
 const STATUS_ID = 'supervisor';
 
 let _widgetVisible = true;
+let _clearTimer: ReturnType<typeof setTimeout> | null = null;
+let _lastActiveState: { outcome: string; interventions: SupervisorIntervention[] } | null = null;
+let _lastThinking = '';
 
 /** Toggle the widget on/off. Returns the new visibility state. */
 export function toggleWidget(): boolean {
@@ -38,17 +41,47 @@ export type WidgetAction =
 
 /**
  * Update footer + widget. Call this every time state or action changes.
- * Clears both when state is null or inactive.
+ * Clears both when state is null or inactive, with a 5-second delay to
+ * allow reading the final thinking text.
  */
 export function updateUI(
   ctx: ExtensionContext,
   state: SupervisorState | null,
   action: WidgetAction = { type: 'watching' }
 ): void {
+  // Cancel any pending clear timer when state updates
+  if (_clearTimer) {
+    clearTimeout(_clearTimer);
+    _clearTimer = null;
+  }
+
   if (!state || !state.active) {
+    // State became inactive - keep showing last state for 5 seconds
+    if (_lastActiveState) {
+      _clearTimer = setTimeout(() => {
+        _lastActiveState = null;
+        _lastThinking = '';
+        ctx.ui.setStatus(STATUS_ID, undefined);
+        ctx.ui.setWidget(WIDGET_ID, undefined);
+      }, 5000);
+      // Continue rendering with last known state (use 'done' as fallback action)
+      const fallbackAction: WidgetAction = { type: 'done' };
+      renderWithState(ctx, _lastActiveState, fallbackAction, _lastThinking);
+      return;
+    }
+    // No previous state to show, clear immediately
     ctx.ui.setStatus(STATUS_ID, undefined);
     ctx.ui.setWidget(WIDGET_ID, undefined);
     return;
+  }
+
+  // Active state - capture it for delayed clear
+  _lastActiveState = {
+    outcome: state.outcome,
+    interventions: [...state.interventions],
+  };
+  if (action.type === 'analyzing' && action.thinking) {
+    _lastThinking = action.thinking;
   }
 
   ctx.ui.setStatus(STATUS_ID, '🎯');
@@ -58,23 +91,26 @@ export function updateUI(
     return;
   }
 
-  const snap = {
-    outcome: state.outcome,
-    interventions: [...state.interventions],
-  };
-  const snapAction = action;
+  renderWithState(ctx, _lastActiveState, action, _lastThinking);
+}
 
+function renderWithState(
+  ctx: ExtensionContext,
+  snap: { outcome: string; interventions: SupervisorIntervention[] },
+  action: WidgetAction,
+  lastThinking: string
+): void {
   ctx.ui.setWidget(WIDGET_ID, (_tui, theme) => {
     // Current action
     let actionStr: string;
-    let thinking = '';
-    switch (snapAction.type) {
+    let thinking = lastThinking;
+    switch (action.type) {
       case 'watching':
         actionStr = theme.fg('dim', 'watching');
         break;
       case 'analyzing':
-        actionStr = theme.fg('warning', `⟳ turn ${snapAction.turn}`);
-        thinking = snapAction.thinking ?? '';
+        actionStr = theme.fg('warning', `⟳ turn ${action.turn}`);
+        thinking = action.thinking ?? lastThinking;
         break;
       case 'steering':
         actionStr = theme.fg('warning', 'steering');
@@ -83,7 +119,7 @@ export function updateUI(
         actionStr = theme.fg('accent', '✓ done');
         break;
       case 'waiting':
-        actionStr = theme.fg('warning', `⏳ ${snapAction.message}`);
+        actionStr = theme.fg('warning', `⏳ ${action.message}`);
         break;
     }
 
@@ -97,7 +133,7 @@ export function updateUI(
     // Suffix parts (preserved - not truncated)
     const steerCount = snap.interventions.length;
     const steers = steerCount > 0 ? theme.fg('dim', `↗ ${steerCount}`) : '';
-    const reframeTier = snapAction.reframeTier ?? 0;
+    const reframeTier = action.reframeTier ?? 0;
     const reframeStr = reframeTier > 0 ? theme.fg('error', `↻${reframeTier}`) : '';
     const suffixParts = [steers, reframeStr, actionStr].filter(Boolean);
 
