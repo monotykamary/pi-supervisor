@@ -23,8 +23,8 @@ let _animationTimer: ReturnType<typeof setTimeout> | null = null;
 let _lastActiveState: { outcome: string; interventions: SupervisorIntervention[] } | null = null;
 let _lastThinking = '';
 let _lastActionType: WidgetAction['type'] = 'watching';
-let _animatedLines: string[] = [];
-let _animationStep = 0;
+let _lastThinkingLines: string[] = []; // Actual rendered thinking lines (plain text with indent)
+let _hiddenLineCount = 0; // Number of lines hidden from top during animation
 
 /** Toggle the widget on/off. Returns the new visibility state. */
 export function toggleWidget(): boolean {
@@ -63,29 +63,22 @@ export function updateUI(
     _animationTimer = null;
   }
   // Reset animation state
-  _animatedLines = [];
-  _animationStep = 0;
+  _hiddenLineCount = 0;
 
   if (!state || !state.active) {
     // State became inactive - start animation after delay
-    if (_lastActiveState) {
+    if (_lastActiveState && _lastThinkingLines.length > 0) {
       _clearTimer = setTimeout(() => {
-        startClearAnimation(ctx);
+        startLineClearAnimation(ctx);
       }, CLEAR_DELAY_MS);
       // Continue rendering with last known state
       const fallbackAction: WidgetAction = { type: 'done', reframeTier: 0 };
       _lastActionType = 'done';
-      renderWithState(
-        ctx,
-        _lastActiveState,
-        fallbackAction,
-        _lastThinking,
-        _animatedLines,
-        _animationStep
-      );
+      renderWithState(ctx, _lastActiveState, fallbackAction, _lastThinking, _hiddenLineCount);
       return;
     }
-    // No previous state to show, clear immediately
+    // No previous state or no thinking lines to animate, clear immediately
+    _lastThinkingLines = [];
     ctx.ui.setStatus(STATUS_ID, undefined);
     ctx.ui.setWidget(WIDGET_ID, undefined);
     return;
@@ -108,78 +101,55 @@ export function updateUI(
     return;
   }
 
-  renderWithState(ctx, _lastActiveState, action, _lastThinking, _animatedLines, _animationStep);
+  renderWithState(ctx, _lastActiveState, action, _lastThinking, _hiddenLineCount);
 }
 
-/** Start the line-by-line clear animation */
-function startClearAnimation(ctx: ExtensionContext): void {
-  if (!_lastActiveState) return;
-
-  const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, '');
-  const thinkingPrefix = '  ';
-  const paddedWidth = 80;
-
-  // Calculate wrapped thinking lines
-  const thinkingWords = _lastThinking.split(' ');
-  const thinkingLines: string[] = [];
-  let currentLine = '';
-
-  for (const word of thinkingWords) {
-    const testLine = currentLine ? `${currentLine} ${word}` : word;
-    if (stripAnsi(testLine).length <= paddedWidth - thinkingPrefix.length) {
-      currentLine = testLine;
-    } else {
-      if (currentLine) thinkingLines.push(currentLine);
-      currentLine = word;
-    }
-  }
-  if (currentLine) thinkingLines.push(currentLine);
+/** Start the line-by-line clear animation - hides lines from top to bottom */
+function startLineClearAnimation(ctx: ExtensionContext): void {
+  if (!_lastActiveState || _lastThinkingLines.length === 0) return;
 
   const isSteering = _lastActionType === 'steering';
-  const totalLines = isSteering ? Math.max(0, thinkingLines.length - 1) : thinkingLines.length;
+  // For steering: keep 1 line (will be truncated to ... at end)
+  // For done: clear all lines
+  const targetHiddenCount = isSteering ? _lastThinkingLines.length - 1 : _lastThinkingLines.length;
 
-  const animateStep = (step: number) => {
-    _animationStep = step;
-
-    if (step >= totalLines) {
-      if (isSteering && thinkingLines.length > 0) {
-        // Keep last line truncated for steering mode
-        const lastLine = thinkingLines[thinkingLines.length - 1];
-        const truncated =
-          truncateToWidth(lastLine, paddedWidth - thinkingPrefix.length - 3) + '...';
-        _animatedLines = [thinkingPrefix + truncated];
-        _lastThinking = _animatedLines[0];
+  const animateStep = () => {
+    if (_hiddenLineCount >= targetHiddenCount) {
+      if (isSteering && _lastThinkingLines.length > 0) {
+        // Keep last line truncated with ...
+        const lastLine = _lastThinkingLines[_lastThinkingLines.length - 1].replace(/^  /, '');
+        _lastThinkingLines = ['  ' + truncateToWidth(lastLine, 77) + '...'];
+        _hiddenLineCount = 0;
         renderWithState(
           ctx,
           _lastActiveState!,
           { type: 'steering', message: '', reframeTier: 0 },
-          _lastThinking,
-          _animatedLines,
-          step
+          _lastThinkingLines[0],
+          0
         );
         return;
       } else {
-        // Done state - clear everything after animation
+        // Done state - clear everything
         _lastActiveState = null;
         _lastThinking = '';
-        _animatedLines = [];
+        _lastThinkingLines = [];
+        _hiddenLineCount = 0;
         ctx.ui.setStatus(STATUS_ID, undefined);
         ctx.ui.setWidget(WIDGET_ID, undefined);
         return;
       }
     }
 
-    // Build progressively emptying lines (from top, keeping bottom)
-    _animatedLines = thinkingLines.slice(step).map((line) => '  ' + line);
+    _hiddenLineCount++;
     const fallbackAction: WidgetAction = isSteering
       ? { type: 'steering', message: '', reframeTier: 0 }
       : { type: 'done', reframeTier: 0 };
-    renderWithState(ctx, _lastActiveState!, fallbackAction, _lastThinking, _animatedLines, step);
+    renderWithState(ctx, _lastActiveState!, fallbackAction, '', _hiddenLineCount);
 
-    _animationTimer = setTimeout(() => animateStep(step + 1), ANIMATION_STEP_MS);
+    _animationTimer = setTimeout(animateStep, ANIMATION_STEP_MS);
   };
 
-  animateStep(0);
+  animateStep();
 }
 
 function renderWithState(
@@ -187,8 +157,7 @@ function renderWithState(
   snap: { outcome: string; interventions: SupervisorIntervention[] },
   action: WidgetAction,
   lastThinking: string,
-  animatedLines: string[] = [],
-  animationStep: number = 0
+  hideFromTop: number = 0
 ): void {
   ctx.ui.setWidget(WIDGET_ID, (_tui, theme) => {
     // Current action
@@ -230,7 +199,7 @@ function renderWithState(
     const suffixParts = [steers, reframeStr, actionStr].filter(Boolean);
 
     const thinkingPrefix = theme.fg('dim', '  ');
-    const rawThinking = animatedLines.length > 0 ? '' : thinking;
+    const rawThinking = thinking;
 
     return {
       render: (width: number) => {
@@ -261,34 +230,48 @@ function renderWithState(
         const line = prefix + goalText + goalQuoteClose + suffix;
         const l1 = truncateToWidth(line, paddedWidth);
 
-        // If animating, show the progressively cleared lines
-        if (animatedLines.length > 0) {
-          const dimAnimatedLines = animatedLines.map((line) => theme.fg('dim', line));
-          return [l1, ...dimAnimatedLines];
+        // During animation, show stored lines with top lines hidden
+        if (hideFromTop > 0 && _lastThinkingLines.length > 0) {
+          const visibleLines = _lastThinkingLines
+            .slice(hideFromTop)
+            .map((line) => theme.fg('dim', line));
+          return [l1, ...visibleLines];
         }
 
-        if (!rawThinking) return [l1];
+        if (!rawThinking) {
+          _lastThinkingLines = [];
+          return [l1];
+        }
 
         // Wrap thinking text naturally into multiple lines with dim color
         const thinkingIndent = stripAnsi(thinkingPrefix).length;
         const thinkingWords = rawThinking.split(' ');
         const thinkingLines: string[] = [];
+        const plainLines: string[] = [];
         let currentThinkingLine = '';
+        let currentPlainLine = '';
 
         for (const word of thinkingWords) {
-          const testLine = currentThinkingLine ? `${currentThinkingLine} ${word}` : word;
+          const testLine = currentPlainLine ? `${currentPlainLine} ${word}` : word;
           if (testLine.length <= paddedWidth - thinkingIndent) {
-            currentThinkingLine = testLine;
+            currentPlainLine = testLine;
+            currentThinkingLine = currentThinkingLine ? `${currentThinkingLine} ${word}` : word;
           } else {
             if (currentThinkingLine) {
               thinkingLines.push(thinkingPrefix + theme.fg('dim', currentThinkingLine));
+              plainLines.push('  ' + currentPlainLine);
             }
+            currentPlainLine = word;
             currentThinkingLine = word;
           }
         }
         if (currentThinkingLine) {
           thinkingLines.push(thinkingPrefix + theme.fg('dim', currentThinkingLine));
+          plainLines.push('  ' + currentPlainLine);
         }
+
+        // Store plain wrapped lines for animation
+        _lastThinkingLines = plainLines;
 
         return [l1, ...thinkingLines];
       },
