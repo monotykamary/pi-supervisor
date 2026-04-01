@@ -116,14 +116,12 @@ function startLineClearAnimation(ctx: ExtensionContext): void {
   if (!_lastActiveState || _lastThinkingLines.length === 0) return;
 
   const isSteering = _lastActionType === 'steering';
-  const targetVisibleCount = 0; // Clear all lines for both steering and done
+  const targetVisibleCount = 0;
 
   const animateStep = () => {
     const currentVisible = _lastThinkingLines.length - _hiddenFromBottomCount;
 
     if (currentVisible <= targetVisibleCount) {
-      // All lines cleared - for steering, keep widget visible with empty thoughts
-      // for done, clear entire widget
       if (isSteering) {
         _lastThinkingLines = [];
         _hiddenFromBottomCount = 0;
@@ -231,7 +229,7 @@ function renderWithState(
         const line = prefix + goalText + goalQuoteClose + suffix;
         const l1 = truncateToWidth(line, paddedWidth);
 
-        // During animation, hide lines from the bottom (keep top/oldest visible)
+        // During animation, hide lines from the bottom
         if (hideFromBottom > 0 && _lastThinkingLines.length > 0) {
           const visibleCount = Math.max(0, _lastThinkingLines.length - hideFromBottom);
           const visibleLines = _lastThinkingLines
