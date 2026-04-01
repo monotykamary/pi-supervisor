@@ -57,7 +57,7 @@ pi -e ~/projects/pi-supervisor/src/index.ts
 /supervise stop
 ```
 
-The agent can also initiate supervision itself by calling the `start_supervision` tool — useful when it recognises a task needs goal tracking. Once active, supervision is locked: only the user can change or stop it.
+The agent can also initiate supervision itself by calling the `start_supervision` tool — useful when it recognises a task needs goal tracking. The tool uses the global config model or active chat model; the AI cannot specify a model. Once active, supervision is locked: only the user can change or stop it.
 
 ## UI
 
@@ -80,21 +80,27 @@ Navigate with arrow keys, Escape to close. Changes are applied on close.
 🎯
 ```
 
-**Widget** (one line, updated live):
+**Widget** (one line, updated live, text truncates to fit window width):
 
 ```
-◉ Supervising · Goal: "Refactor auth module…" · ↗ 2 · ⟳ turn 4
+◉ Supervising · Goal: "Refactor auth module…" · ↗ 2 · steering
   The agent has added the DI container but hasn't updated the existing call sites yet…
 ```
+
+Header states:
+
+- **Inferring** — analyzing conversation to suggest a goal (`◉ Inferring · scanning`)
+- **Supervising** — active supervision in progress
+- **Supervised** — goal achieved, widget clears after delay
 
 When the supervisor detects an ineffective pattern, the reframe tier appears (e.g., `↻2`):
 
 ```
-◉ Supervising · Goal: "Implement payment flow…" · ↗ 5 · ↻2 · ⟳ turn 12
+◉ Supervising · Goal: "Implement payment flow…" · ↗ 5 · ↻2 · analyzing
   Breaking into smaller milestone: get the checkout form rendering first…
 ```
 
-The second line shows the supervisor's reasoning as it streams. Toggle the widget with `/supervise widget`.
+The thinking text streams naturally into multiple lines. When supervision ends or steers, thoughts animate away line-by-line from bottom to top (clearing newest first), then the widget clears. Toggle the widget with `/supervise widget`.
 
 ## How Supervision Works
 
