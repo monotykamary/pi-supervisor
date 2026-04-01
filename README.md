@@ -83,14 +83,14 @@ Navigate with arrow keys, Escape to close. Changes are applied on close.
 **Widget** (one line, updated live):
 
 ```
-◉ Supervising · Goal: "Refactor auth module…" · claude-haiku · ↗ 2 · ⟳ turn 4
+◉ Supervising · Goal: "Refactor auth module…" · ↗ 2 · ⟳ turn 4
   The agent has added the DI container but hasn't updated the existing call sites yet…
 ```
 
 When the supervisor detects an ineffective pattern, the reframe tier appears (e.g., `↻2`):
 
 ```
-◉ Supervising · Goal: "Implement payment flow…" · claude-haiku · ↗ 5 · ↻2 · ⟳ turn 12
+◉ Supervising · Goal: "Implement payment flow…" · ↗ 5 · ↻2 · ⟳ turn 12
   Breaking into smaller milestone: get the checkout form rendering first…
 ```
 
@@ -137,7 +137,6 @@ The supervisor runs on a **separate model** — it can be a cheaper/faster model
 1. Previous session state (persists within a session)
 2. `.pi/supervisor-config.json` in the project root (saved via settings panel)
 3. Active chat model (`ctx.model`) — so it works out of the box with no configuration
-4. Built-in default: `anthropic/claude-haiku-4-5-20251001`
 
 Change at any time through the settings panel (run `/supervise` and select **Model**). The selection is saved to `.pi/supervisor-config.json` if the `.pi/` directory exists.
 

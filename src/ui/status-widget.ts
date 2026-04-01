@@ -2,7 +2,7 @@
  * Supervisor UI — footer status indicator and widget.
  *
  * Footer: 🎯 emoji badge.
- * Widget line 1: ◉ Supervising · Goal: "…" · model · steers · action
+ * Widget line 1: ◉ Supervising · Goal: "…" · steers · action
  * Widget line 2: dim thinking text while analyzing (temporary)
  *
  * Toggle visibility with toggleWidget().
@@ -66,7 +66,6 @@ export function updateUI(
 
   const snap = {
     outcome: state.outcome,
-    modelId: state.modelId,
     interventions: [...state.interventions],
   };
   const snapAction = action;
@@ -80,8 +79,6 @@ export function updateUI(
     const goalLabel = theme.fg('dim', 'Goal:');
     const goalText = theme.fg('muted', `"${truncate(snap.outcome, MAX_OUTCOME_DISPLAY)}"`);
     const goal = `${goalLabel} ${goalText}`;
-    // Model
-    const model = theme.fg('dim', snap.modelId);
     // Steer count
     const steers = steerCount > 0 ? theme.fg('dim', `↗ ${steerCount}`) : '';
 
@@ -112,7 +109,7 @@ export function updateUI(
     }
 
     const sep = theme.fg('dim', ' · ');
-    const parts = [header, goal, model, steers, reframeStr, actionStr].filter(Boolean);
+    const parts = [header, goal, steers, reframeStr, actionStr].filter(Boolean);
     const line = parts.join(sep);
 
     const thinkingLine = thinking

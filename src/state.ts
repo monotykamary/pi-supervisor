@@ -13,8 +13,8 @@ import type {
 
 const ENTRY_TYPE = 'supervisor-state';
 
-export const DEFAULT_PROVIDER = 'anthropic';
-export const DEFAULT_MODEL_ID = 'claude-haiku-4-5-20251001';
+export const DEFAULT_PROVIDER: string | null = null;
+export const DEFAULT_MODEL_ID: string | null = null;
 
 export class SupervisorStateManager {
   private state: SupervisorState | null = null;

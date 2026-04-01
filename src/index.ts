@@ -15,7 +15,7 @@
  */
 
 import type { ExtensionAPI, ExtensionContext } from '@mariozechner/pi-coding-agent';
-import { SupervisorStateManager, DEFAULT_PROVIDER, DEFAULT_MODEL_ID } from './state.js';
+import { SupervisorStateManager } from './state.js';
 import { analyze, inferOutcome, loadSystemPrompt } from './engine.js';
 import { updateUI, toggleWidget, isWidgetVisible, type WidgetAction } from './ui/status-widget.js';
 import { pickModel } from './ui/model-picker.js';
@@ -260,10 +260,8 @@ export default function (pi: ExtensionAPI) {
         const s = state.getState();
         const globalModel = loadGlobalModel();
         const sessionModel = ctx.model;
-        const defaultProvider =
-          s?.provider ?? globalModel?.provider ?? sessionModel?.provider ?? DEFAULT_PROVIDER;
-        const defaultModelId =
-          s?.modelId ?? globalModel?.modelId ?? sessionModel?.id ?? DEFAULT_MODEL_ID;
+        const defaultProvider = s?.provider ?? globalModel?.provider ?? sessionModel?.provider;
+        const defaultModelId = s?.modelId ?? globalModel?.modelId ?? sessionModel?.id;
 
         // Check if there's conversation history and no active supervision
         const hasConversation = !s?.active && hasUserMessages(ctx);
@@ -282,7 +280,9 @@ export default function (pi: ExtensionAPI) {
 
           if (choice === 'Infer goal from conversation') {
             ctx.ui.setStatus('supervisor', 'Inferring goal from conversation...');
-            const inferred = await inferOutcome(ctx, defaultProvider, defaultModelId);
+            const inferProvider = defaultProvider ?? sessionModel?.provider ?? 'unknown';
+            const inferModelId = defaultModelId ?? sessionModel?.id ?? 'unknown';
+            const inferred = await inferOutcome(ctx, inferProvider, inferModelId);
             ctx.ui.setStatus('supervisor', undefined);
 
             if (!inferred) {
@@ -293,7 +293,9 @@ export default function (pi: ExtensionAPI) {
               // Fall through to settings panel
             } else {
               // Start supervision immediately with inferred outcome and global settings
-              state.start(inferred, defaultProvider, defaultModelId);
+              const startProvider = defaultProvider ?? sessionModel?.provider ?? 'unknown';
+              const startModelId = defaultModelId ?? sessionModel?.id ?? 'unknown';
+              state.start(inferred, startProvider, startModelId);
               idleSteers = 0;
               updateUI(ctx, state.getState());
 
@@ -301,7 +303,7 @@ export default function (pi: ExtensionAPI) {
               const promptLabel =
                 source === 'built-in' ? 'built-in prompt' : source.replace(ctx.cwd, '.');
               ctx.ui.notify(
-                `Supervisor active: "${inferred.slice(0, 50)}${inferred.length > 50 ? '…' : ''}" | ${defaultProvider}/${defaultModelId} | ${promptLabel}`,
+                `Supervisor active: "${inferred.slice(0, 50)}${inferred.length > 50 ? '…' : ''}" | ${startProvider}/${startModelId} | ${promptLabel}`,
                 'info'
               );
               return;
@@ -310,7 +312,12 @@ export default function (pi: ExtensionAPI) {
           // If "Open settings panel" or inference failed, fall through
         }
 
-        const result = await openSettings(ctx, s, defaultProvider, defaultModelId);
+        const result = await openSettings(
+          ctx,
+          s,
+          defaultProvider ?? sessionModel?.provider ?? 'unknown',
+          defaultModelId ?? sessionModel?.id ?? 'unknown'
+        );
         if (!result) return; // user cancelled with no changes
 
         // Apply model change
@@ -346,14 +353,13 @@ export default function (pi: ExtensionAPI) {
         return;
       }
 
-      // Resolve model settings: session state → global config → active session model → built-in defaults
+      // Resolve model settings: session state → global config → active session model
       const existing = state.getState();
       const globalModel = loadGlobalModel();
       const sessionModel = ctx.model;
       let provider =
-        existing?.provider ?? globalModel?.provider ?? sessionModel?.provider ?? DEFAULT_PROVIDER;
-      let modelId =
-        existing?.modelId ?? globalModel?.modelId ?? sessionModel?.id ?? DEFAULT_MODEL_ID;
+        existing?.provider ?? globalModel?.provider ?? sessionModel?.provider ?? 'unknown';
+      let modelId = existing?.modelId ?? globalModel?.modelId ?? sessionModel?.id ?? 'unknown';
 
       // Only prompt for a model if none has been configured yet
       if (!existing) {
@@ -422,18 +428,24 @@ export default function (pi: ExtensionAPI) {
         );
       }
 
-      // Resolve model: tool param → global config → active session model → built-in default
+      // Resolve model: tool param → global config → active session model
       let provider: string;
       let modelId: string;
       if (params.model) {
         const slash = params.model.indexOf('/');
-        provider = slash === -1 ? DEFAULT_PROVIDER : params.model.slice(0, slash);
-        modelId = slash === -1 ? params.model : params.model.slice(slash + 1);
+        if (slash === -1) {
+          // No provider specified, use the session's current provider
+          provider = ctx.model?.provider ?? 'unknown';
+          modelId = params.model;
+        } else {
+          provider = params.model.slice(0, slash);
+          modelId = params.model.slice(slash + 1);
+        }
       } else {
         const globalModel = loadGlobalModel();
         const sessionModel = ctx.model;
-        provider = globalModel?.provider ?? sessionModel?.provider ?? DEFAULT_PROVIDER;
-        modelId = globalModel?.modelId ?? sessionModel?.id ?? DEFAULT_MODEL_ID;
+        provider = globalModel?.provider ?? sessionModel?.provider ?? 'unknown';
+        modelId = globalModel?.modelId ?? sessionModel?.id ?? 'unknown';
       }
 
       state.start(params.outcome, provider, modelId);
