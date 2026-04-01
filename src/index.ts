@@ -298,6 +298,13 @@ export default function (pi: ExtensionAPI) {
               idleSteers = 0;
               updateUI(ctx, state.getState());
 
+              // Kickstart the agent if idle - inferred goals should trigger immediate work
+              if (ctx.isIdle()) {
+                pi.sendUserMessage(`Please start working on this goal: ${inferred}`, {
+                  deliverAs: 'followUp',
+                });
+              }
+
               ctx.ui.notify(
                 `Supervisor active: "${inferred.slice(0, 50)}${inferred.length > 50 ? '…' : ''}"`,
                 'info'
@@ -389,6 +396,13 @@ export default function (pi: ExtensionAPI) {
       idleSteers = 0;
       updateUI(ctx, state.getState());
 
+      // Kickstart the agent if idle - the user just set a goal, they want work to start
+      if (ctx.isIdle()) {
+        pi.sendUserMessage(`Please start working on this goal: ${trimmed}`, {
+          deliverAs: 'followUp',
+        });
+      }
+
       ctx.ui.notify(
         `Supervisor active: "${trimmed.slice(0, 50)}${trimmed.length > 50 ? '…' : ''}"`,
         'info'
@@ -439,6 +453,13 @@ export default function (pi: ExtensionAPI) {
       idleSteers = 0;
       currentCtx = ctx;
       updateUI(ctx, state.getState());
+
+      // Kickstart the agent if idle - model-initiated supervision should trigger work
+      if (ctx.isIdle()) {
+        pi.sendUserMessage(`Please start working on this goal: ${params.outcome}`, {
+          deliverAs: 'followUp',
+        });
+      }
 
       // Notify the user so they're aware supervision was initiated by the model
       ctx.ui.notify(
