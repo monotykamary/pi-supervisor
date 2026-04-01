@@ -56,6 +56,10 @@ export function updateUI(
   state: SupervisorState | null,
   action: WidgetAction = { type: 'watching' }
 ): void {
+  // Check if we're receiving new thinking content - if so, clear old thoughts immediately
+  const hasNewThinking =
+    action.type === 'analyzing' && action.thinking && action.thinking !== _lastThinking;
+
   if (_clearTimer) {
     clearTimeout(_clearTimer);
     _clearTimer = null;
@@ -64,7 +68,13 @@ export function updateUI(
     clearTimeout(_animationTimer);
     _animationTimer = null;
   }
-  _hiddenFromBottomCount = 0;
+
+  // If we have new thinking, reset the clear animation state immediately
+  // so old thoughts don't flash back
+  if (hasNewThinking) {
+    _hiddenFromBottomCount = 0;
+    _lastThinkingLines = [];
+  }
 
   // Always update last state first so animation uses latest intervention count
   if (state?.active) {
