@@ -63,9 +63,9 @@ export function updateUI(
         _lastThinking = '';
         ctx.ui.setStatus(STATUS_ID, undefined);
         ctx.ui.setWidget(WIDGET_ID, undefined);
-      }, 5000);
-      // Continue rendering with last known state (use 'done' as fallback action)
-      const fallbackAction: WidgetAction = { type: 'done' };
+      }, 30000);
+      // Continue rendering with last known state (use 'done' as fallback action with completed status)
+      const fallbackAction: WidgetAction = { type: 'done', reframeTier: 0 };
       renderWithState(ctx, _lastActiveState, fallbackAction, _lastThinking);
       return;
     }
@@ -116,7 +116,7 @@ function renderWithState(
         actionStr = theme.fg('warning', 'steering');
         break;
       case 'done':
-        actionStr = theme.fg('accent', '✓ done');
+        actionStr = theme.fg('success', '✓ completed');
         break;
       case 'waiting':
         actionStr = theme.fg('warning', `⏳ ${action.message}`);
