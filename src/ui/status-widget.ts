@@ -65,6 +65,18 @@ export function updateUI(
   }
   _hiddenFromBottomCount = 0;
 
+  // Always update last state first so animation uses latest intervention count
+  if (state?.active) {
+    _lastActiveState = {
+      outcome: state.outcome,
+      interventions: [...state.interventions],
+    };
+    _lastActionType = action.type;
+    if (action.type === 'analyzing' && action.thinking) {
+      _lastThinking = action.thinking;
+    }
+  }
+
   // Start animation for done (inactive) or steering (active but intervening)
   const shouldAnimate = !state || !state.active || action.type === 'steering';
 
@@ -89,15 +101,6 @@ export function updateUI(
     return;
   }
 
-  _lastActiveState = {
-    outcome: state.outcome,
-    interventions: [...state.interventions],
-  };
-  _lastActionType = action.type;
-  if (action.type === 'analyzing' && action.thinking) {
-    _lastThinking = action.thinking;
-  }
-
   ctx.ui.setStatus(STATUS_ID, '🎯');
 
   if (!_widgetVisible) {
@@ -105,7 +108,7 @@ export function updateUI(
     return;
   }
 
-  renderWithState(ctx, _lastActiveState, action, _lastThinking, _hiddenFromBottomCount);
+  renderWithState(ctx, _lastActiveState!, action, _lastThinking, _hiddenFromBottomCount);
 }
 
 /** Start the line-by-line clear animation - hides lines from bottom to top */
