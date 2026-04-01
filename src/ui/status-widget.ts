@@ -65,21 +65,6 @@ export function updateUI(
   const snapAction = action;
 
   ctx.ui.setWidget(WIDGET_ID, (_tui, theme) => {
-    const steerCount = snap.interventions.length;
-
-    // Header: ◉ Supervising
-    const header = `${theme.fg('accent', '◉')} ${theme.fg('accent', 'Supervising')}`;
-    // Goal label + value
-    const goalLabel = theme.fg('dim', 'Goal:');
-    const goalText = theme.fg('muted', `"${snap.outcome}"`);
-    const goal = `${goalLabel} ${goalText}`;
-    // Steer count
-    const steers = steerCount > 0 ? theme.fg('dim', `↗ ${steerCount}`) : '';
-
-    // Reframe tier indicator
-    const reframeTier = snapAction.reframeTier ?? 0;
-    const reframeStr = reframeTier > 0 ? theme.fg('error', `↻${reframeTier}`) : '';
-
     // Current action
     let actionStr: string;
     let thinking = '';
@@ -92,7 +77,7 @@ export function updateUI(
         thinking = snapAction.thinking ?? '';
         break;
       case 'steering':
-        actionStr = theme.fg('warning', `↗ "${snapAction.message}"`);
+        actionStr = theme.fg('warning', 'steering');
         break;
       case 'done':
         actionStr = theme.fg('accent', '✓ done');
@@ -102,15 +87,45 @@ export function updateUI(
         break;
     }
 
+    // Build widget parts for middle truncation (goal is truncated, suffix is preserved)
     const sep = theme.fg('dim', ' · ');
-    const parts = [header, goal, steers, reframeStr, actionStr].filter(Boolean);
-    const line = parts.join(sep);
+    const header = `${theme.fg('accent', '◉')} ${theme.fg('accent', 'Supervising')}`;
+    const goalLabel = `${theme.fg('dim', 'Goal:')} `;
+    const goalQuoteOpen = theme.fg('muted', '"');
+    const goalQuoteClose = theme.fg('muted', '"');
+
+    // Suffix parts (preserved - not truncated)
+    const steerCount = snap.interventions.length;
+    const steers = steerCount > 0 ? theme.fg('dim', `↗ ${steerCount}`) : '';
+    const reframeTier = snapAction.reframeTier ?? 0;
+    const reframeStr = reframeTier > 0 ? theme.fg('error', `↻${reframeTier}`) : '';
+    const suffixParts = [steers, reframeStr, actionStr].filter(Boolean);
 
     const thinkingLine = thinking ? theme.fg('dim', `  ${thinking}`) : '';
 
     return {
       render: (width: number) => {
+        // Build suffix first (we want to preserve these)
+        const suffix = suffixParts.length > 0 ? sep + suffixParts.join(sep) : '';
+        const prefix = header + sep + goalLabel + goalQuoteOpen;
+
+        // Calculate available space for goal text
+        // Strip ANSI for accurate width calculation
+        const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, '');
+        const prefixWidth = stripAnsi(prefix).length;
+        const suffixWidth = stripAnsi(suffix).length;
+        const closeQuoteWidth = stripAnsi(goalQuoteClose).length;
+        const availableForGoal = Math.max(0, width - prefixWidth - suffixWidth - closeQuoteWidth);
+
+        // Truncate goal to fit available space
+        const rawGoal = snap.outcome;
+        const truncatedGoal = truncateToWidth(rawGoal, availableForGoal);
+        const goalText = theme.fg('muted', truncatedGoal);
+
+        // Assemble final line
+        const line = prefix + goalText + goalQuoteClose + suffix;
         const l1 = truncateToWidth(line, width);
+
         if (!thinkingLine) return [l1];
         return [l1, truncateToWidth(thinkingLine, width)];
       },
