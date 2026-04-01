@@ -222,7 +222,8 @@ export class SupervisorStateManager {
     this.state = null;
   }
 
-  private persist(): void {
+  /** Persist current state to session (public for compaction handler). */
+  persist(): void {
     if (!this.state) return;
     // Don't persist ephemeral fields that are runtime-only
     const { snapshotBuffer, lastAnalyzedTurn, justSteered, ...toPersist } = this.state;

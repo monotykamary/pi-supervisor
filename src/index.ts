@@ -84,6 +84,19 @@ export default function (pi: ExtensionAPI) {
   pi.on('session_switch', async (_event, ctx) => onSessionLoad(ctx));
   pi.on('session_fork', async (_event, ctx) => onSessionLoad(ctx));
   pi.on('session_tree', async (_event, ctx) => onSessionLoad(ctx));
+  pi.on('session_compact', async (_event, ctx) => {
+    // After compaction, the session is reloaded with a summary.
+    // Reload supervisor state from the remaining entries (compaction may have
+    // summarized away old state entries).
+    currentCtx = ctx;
+    state.loadFromSession(ctx);
+    // If state was active but lost in compaction, re-persist it so future
+    // compactions will find it in the kept portion.
+    if (state.isActive()) {
+      state.persist();
+    }
+    updateUI(ctx, state.getState());
+  });
 
   // ---- Keep ctx fresh ----
 
