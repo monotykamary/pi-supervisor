@@ -116,7 +116,7 @@ function renderWithState(
         actionStr = theme.fg('warning', 'steering');
         break;
       case 'done':
-        actionStr = theme.fg('success', '✓ completed');
+        actionStr = theme.fg('accent', '✓ done');
         break;
       case 'waiting':
         actionStr = theme.fg('warning', `⏳ ${action.message}`);
