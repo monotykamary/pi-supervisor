@@ -15,10 +15,6 @@ import type { SupervisorState } from '../types.js';
 const WIDGET_ID = 'supervisor';
 const STATUS_ID = 'supervisor';
 
-const MAX_OUTCOME_DISPLAY = 48;
-const MAX_STEER_DISPLAY = 50;
-const MAX_THINKING_DISPLAY = 80;
-
 let _widgetVisible = true;
 
 /** Toggle the widget on/off. Returns the new visibility state. */
@@ -38,9 +34,7 @@ export type WidgetAction =
   | { type: 'done'; reframeTier?: number }
   | { type: 'waiting'; message: string; turn: number; reframeTier?: number };
 
-function truncate(s: string, max: number): string {
-  return s.length <= max ? s : s.slice(0, max - 1) + '…';
-}
+// Text truncation is now handled dynamically by truncateToWidth based on window width
 
 /**
  * Update footer + widget. Call this every time state or action changes.
@@ -77,7 +71,7 @@ export function updateUI(
     const header = `${theme.fg('accent', '◉')} ${theme.fg('accent', 'Supervising')}`;
     // Goal label + value
     const goalLabel = theme.fg('dim', 'Goal:');
-    const goalText = theme.fg('muted', `"${truncate(snap.outcome, MAX_OUTCOME_DISPLAY)}"`);
+    const goalText = theme.fg('muted', `"${snap.outcome}"`);
     const goal = `${goalLabel} ${goalText}`;
     // Steer count
     const steers = steerCount > 0 ? theme.fg('dim', `↗ ${steerCount}`) : '';
@@ -98,7 +92,7 @@ export function updateUI(
         thinking = snapAction.thinking ?? '';
         break;
       case 'steering':
-        actionStr = theme.fg('warning', `↗ "${truncate(snapAction.message, MAX_STEER_DISPLAY)}"`);
+        actionStr = theme.fg('warning', `↗ "${snapAction.message}"`);
         break;
       case 'done':
         actionStr = theme.fg('accent', '✓ done');
@@ -112,9 +106,7 @@ export function updateUI(
     const parts = [header, goal, steers, reframeStr, actionStr].filter(Boolean);
     const line = parts.join(sep);
 
-    const thinkingLine = thinking
-      ? theme.fg('dim', `  ${truncate(thinking, MAX_THINKING_DISPLAY)}`)
-      : '';
+    const thinkingLine = thinking ? theme.fg('dim', `  ${thinking}`) : '';
 
     return {
       render: (width: number) => {
