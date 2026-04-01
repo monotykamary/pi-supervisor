@@ -116,28 +116,24 @@ function startLineClearAnimation(ctx: ExtensionContext): void {
   if (!_lastActiveState || _lastThinkingLines.length === 0) return;
 
   const isSteering = _lastActionType === 'steering';
-  const targetVisibleCount = isSteering ? 1 : 0;
+  const targetVisibleCount = 0; // Clear all lines for both steering and done
 
   const animateStep = () => {
     const currentVisible = _lastThinkingLines.length - _hiddenFromBottomCount;
 
     if (currentVisible <= targetVisibleCount) {
-      if (isSteering && _lastThinkingLines.length > 0) {
-        // Keep first (oldest) line, truncate end to fit with ... (avoid double …)
-        const firstLine = _lastThinkingLines[0].replace(/^  /, '');
-        const maxLen = Math.max(0, _lastRenderedWidth - 2 - 3); // 2 for indent, 3 for ...
-        const truncated =
-          firstLine.length > maxLen ? firstLine.slice(0, maxLen) + '...' : firstLine;
-        _lastThinkingLines = ['  ' + truncated];
+      // All lines cleared - for steering, keep widget visible with empty thoughts
+      // for done, clear entire widget
+      if (isSteering) {
+        _lastThinkingLines = [];
         _hiddenFromBottomCount = 0;
-        // Use stored action to preserve reframe tier
         const reframeTier =
           _storedAction?.type === 'steering' ? (_storedAction.reframeTier ?? 0) : 0;
         renderWithState(
           ctx,
           _lastActiveState!,
           { type: 'steering', message: '', reframeTier },
-          _lastThinkingLines[0],
+          '',
           0
         );
         return;
