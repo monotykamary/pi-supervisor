@@ -360,6 +360,19 @@ export default function (pi: ExtensionAPI) {
         existing?.provider ?? globalModel?.provider ?? sessionModel?.provider ?? 'unknown';
       let modelId = existing?.modelId ?? globalModel?.modelId ?? sessionModel?.id ?? 'unknown';
 
+      // If supervision is already active, append to the existing goal
+      if (state.isActive() && existing) {
+        const appendedOutcome = `${existing.outcome}. Additionally: ${trimmed}`;
+        state.updateOutcome(appendedOutcome);
+        updateUI(ctx, state.getState());
+
+        ctx.ui.notify(
+          `Supervisor goal expanded: "${trimmed.slice(0, 50)}${trimmed.length > 50 ? '…' : ''}" added to active supervision.`,
+          'info'
+        );
+        return;
+      }
+
       // Only prompt for a model if none has been configured yet
       if (!existing) {
         const apiKey = await ctx.modelRegistry.getApiKeyForProvider(provider);

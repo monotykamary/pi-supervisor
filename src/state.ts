@@ -81,6 +81,12 @@ export class SupervisorStateManager {
     this.persist();
   }
 
+  updateOutcome(outcome: string): void {
+    if (!this.state) return;
+    this.state.outcome = outcome;
+    this.persist();
+  }
+
   updateSnapshotBuffer(messages: ConversationMessage[]): void {
     if (!this.state) return;
     this.state.snapshotBuffer = messages;
