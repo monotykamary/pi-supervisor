@@ -199,7 +199,7 @@ function renderWithState(
         actionStr = theme.fg('warning', `⏳ ${action.message}`);
         break;
       case 'inferring':
-        actionStr = theme.fg('dim', 'inferring');
+        actionStr = theme.fg('dim', 'scanning');
         break;
     }
 
