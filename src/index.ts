@@ -15,15 +15,18 @@
  */
 
 import type { ExtensionAPI, ExtensionContext } from '@mariozechner/pi-coding-agent';
-import { SupervisorStateManager } from './state.js';
-import { analyze, inferOutcome, loadSystemPrompt } from './engine.js';
-import { updateUI, toggleWidget, isWidgetVisible, type WidgetAction } from './ui/status-widget.js';
+import { SupervisorStateManager } from './state/manager.js';
+import { analyze } from './core/analyzer.js';
+import { inferOutcome } from './core/inference.js';
+import { loadSystemPrompt } from './core/prompt-loader.js';
+import { updateUI, toggleWidget, isWidgetVisible } from './ui/renderer.js';
 import { pickModel } from './ui/model-picker.js';
 import { openSettings } from './ui/settings-panel.js';
 import { loadGlobalModel, saveGlobalModel } from './global-config.js';
-import { disposeSession } from './model-client.js';
+import { disposeSession } from './session/client.js';
 import { Type } from '@sinclair/typebox';
 import { checkChildPiProcesses, waitForSubagents } from './subagent-detector.js';
+import { createInitialState, type WidgetState } from './ui/types.js';
 
 /**
  * Extract partial reasoning text from the supervisor's streaming JSON response.
@@ -69,6 +72,7 @@ function hasUserMessages(ctx: ExtensionContext): boolean {
 
 export default function (pi: ExtensionAPI) {
   const state = new SupervisorStateManager(pi);
+  const widgetState = createInitialState();
   let currentCtx: ExtensionContext | undefined;
   let idleSteers = 0; // consecutive agent_end steers; reset on done/stop/new supervision
 
@@ -77,7 +81,7 @@ export default function (pi: ExtensionAPI) {
   const onSessionLoad = (ctx: ExtensionContext) => {
     currentCtx = ctx;
     state.loadFromSession(ctx);
-    updateUI(ctx, state.getState());
+    updateUI(ctx, widgetState, state.getState());
   };
 
   pi.on('session_start', async (_event, ctx) => onSessionLoad(ctx));
@@ -102,18 +106,21 @@ export default function (pi: ExtensionAPI) {
     // State should now be found (we persisted before compaction)
     if (!state.isActive()) {
       // If somehow still lost, clear UI
-      updateUI(ctx, null);
+      updateUI(ctx, widgetState, null);
       return;
     }
 
     // Update UI to show we're back
-    updateUI(ctx, state.getState(), { type: 'watching', reframeTier: state.getReframeTier() });
+    updateUI(ctx, widgetState, state.getState(), {
+      type: 'watching',
+      reframeTier: state.getReframeTier(),
+    });
 
     // If agent is idle after compaction, analyze and steer to get back on track
     // Compaction often happens mid-conversation, so we need to check if we're still on goal
     if (ctx.isIdle()) {
       const s = state.getState()!;
-      updateUI(ctx, s, {
+      updateUI(ctx, widgetState, s, {
         type: 'analyzing',
         turn: s.turnCount,
         reframeTier: state.getReframeTier(),
@@ -127,7 +134,7 @@ export default function (pi: ExtensionAPI) {
         undefined,
         (accumulated) => {
           const thinking = extractThinking(accumulated);
-          updateUI(ctx, state.getState()!, {
+          updateUI(ctx, widgetState, state.getState()!, {
             type: 'analyzing',
             turn: s.turnCount,
             reframeTier: state.getReframeTier(),
@@ -145,7 +152,7 @@ export default function (pi: ExtensionAPI) {
           timestamp: Date.now(),
           asi: decision.asi,
         });
-        updateUI(ctx, state.getState(), {
+        updateUI(ctx, widgetState, state.getState(), {
           type: 'steering',
           message: decision.message,
           reframeTier: state.getReframeTier(),
@@ -154,12 +161,15 @@ export default function (pi: ExtensionAPI) {
       } else if (decision.action === 'done') {
         idleSteers = 0;
         state.resetReframeTier();
-        updateUI(ctx, state.getState(), { type: 'done' });
+        updateUI(ctx, widgetState, state.getState(), { type: 'done' });
         state.stop();
         disposeSession();
-        updateUI(ctx, state.getState());
+        updateUI(ctx, widgetState, state.getState());
       } else {
-        updateUI(ctx, state.getState(), { type: 'watching', reframeTier: state.getReframeTier() });
+        updateUI(ctx, widgetState, state.getState(), {
+          type: 'watching',
+          reframeTier: state.getReframeTier(),
+        });
       }
     }
   });
@@ -202,7 +212,7 @@ export default function (pi: ExtensionAPI) {
         timestamp: Date.now(),
         asi: decision.asi,
       });
-      updateUI(ctx, state.getState(), { type: 'steering', message: decision.message });
+      updateUI(ctx, widgetState, state.getState(), { type: 'steering', message: decision.message });
       pi.sendUserMessage(decision.message, { deliverAs: 'steer' });
     }
   });
@@ -221,7 +231,7 @@ export default function (pi: ExtensionAPI) {
     // Check for child subagent processes (extension-agnostic via process inspection)
     const subagentStatus = await checkChildPiProcesses();
     if (subagentStatus.hasActiveSubagents) {
-      updateUI(ctx, s, {
+      updateUI(ctx, widgetState, s, {
         type: 'waiting',
         message: `Waiting for ${subagentStatus.count} subagent(s)...`,
         turn: s.turnCount,
@@ -241,7 +251,7 @@ export default function (pi: ExtensionAPI) {
       }
 
       // Subagents done (or timed out), update UI and proceed
-      updateUI(ctx, s, {
+      updateUI(ctx, widgetState, s, {
         type: 'analyzing',
         turn: s.turnCount,
         reframeTier: state.getReframeTier(),
@@ -254,7 +264,11 @@ export default function (pi: ExtensionAPI) {
       state.escalateReframeTier();
     }
 
-    updateUI(ctx, s, { type: 'analyzing', turn: s.turnCount, reframeTier: state.getReframeTier() });
+    updateUI(ctx, widgetState, s, {
+      type: 'analyzing',
+      turn: s.turnCount,
+      reframeTier: state.getReframeTier(),
+    });
 
     const decision = await analyze(
       ctx,
@@ -264,7 +278,7 @@ export default function (pi: ExtensionAPI) {
       undefined,
       (accumulated) => {
         const thinking = extractThinking(accumulated);
-        updateUI(ctx, state.getState()!, {
+        updateUI(ctx, widgetState, state.getState()!, {
           type: 'analyzing',
           turn: s.turnCount,
           reframeTier: state.getReframeTier(),
@@ -282,7 +296,7 @@ export default function (pi: ExtensionAPI) {
         timestamp: Date.now(),
         asi: decision.asi,
       });
-      updateUI(ctx, state.getState(), {
+      updateUI(ctx, widgetState, state.getState(), {
         type: 'steering',
         message: decision.message,
         reframeTier: state.getReframeTier(),
@@ -291,12 +305,15 @@ export default function (pi: ExtensionAPI) {
     } else if (decision.action === 'done') {
       idleSteers = 0;
       state.resetReframeTier();
-      updateUI(ctx, state.getState(), { type: 'done' });
+      updateUI(ctx, widgetState, state.getState(), { type: 'done' });
       state.stop();
       disposeSession(); // Clean up reusable session
-      updateUI(ctx, state.getState());
+      updateUI(ctx, widgetState, state.getState());
     } else {
-      updateUI(ctx, state.getState(), { type: 'watching', reframeTier: state.getReframeTier() });
+      updateUI(ctx, widgetState, state.getState(), {
+        type: 'watching',
+        reframeTier: state.getReframeTier(),
+      });
     }
   });
 
@@ -311,9 +328,9 @@ export default function (pi: ExtensionAPI) {
       // --- subcommands ---
 
       if (trimmed === 'widget') {
-        const visible = toggleWidget();
+        const visible = toggleWidget(widgetState);
         if (state.isActive()) {
-          updateUI(ctx, state.getState());
+          updateUI(ctx, widgetState, state.getState());
         }
         ctx.ui.notify(`Supervisor widget ${visible ? 'shown' : 'hidden'}.`, 'info');
         return;
@@ -327,7 +344,7 @@ export default function (pi: ExtensionAPI) {
         state.stop();
         idleSteers = 0;
         disposeSession();
-        updateUI(ctx, state.getState());
+        updateUI(ctx, widgetState, state.getState());
         ctx.ui.notify('Supervisor stopped.', 'info');
         return;
       }
@@ -357,11 +374,11 @@ export default function (pi: ExtensionAPI) {
           }
 
           if (choice === 'Infer goal from conversation') {
-            updateUI(ctx, state.getState(), { type: 'inferring' });
+            updateUI(ctx, widgetState, state.getState(), { type: 'inferring' });
             const inferProvider = defaultProvider ?? sessionModel?.provider ?? 'unknown';
             const inferModelId = defaultModelId ?? sessionModel?.id ?? 'unknown';
             const inferred = await inferOutcome(ctx, inferProvider, inferModelId);
-            updateUI(ctx, state.getState());
+            updateUI(ctx, widgetState, state.getState());
 
             if (!inferred) {
               ctx.ui.notify(
@@ -375,7 +392,7 @@ export default function (pi: ExtensionAPI) {
               const startModelId = defaultModelId ?? sessionModel?.id ?? 'unknown';
               state.start(inferred, startProvider, startModelId);
               idleSteers = 0;
-              updateUI(ctx, state.getState());
+              updateUI(ctx, widgetState, state.getState());
 
               // Kickstart the agent if idle - inferred goals should trigger immediate work
               if (ctx.isIdle()) {
@@ -417,9 +434,9 @@ export default function (pi: ExtensionAPI) {
 
         // Apply widget toggle
         if (result.widget !== undefined) {
-          const currentlyVisible = isWidgetVisible();
+          const currentlyVisible = isWidgetVisible(widgetState);
           if (result.widget !== currentlyVisible) {
-            toggleWidget();
+            toggleWidget(widgetState);
           }
         }
 
@@ -431,7 +448,7 @@ export default function (pi: ExtensionAPI) {
           ctx.ui.notify('Supervisor stopped.', 'info');
         }
 
-        updateUI(ctx, state.getState());
+        updateUI(ctx, widgetState, state.getState());
         return;
       }
 
@@ -447,7 +464,7 @@ export default function (pi: ExtensionAPI) {
       if (state.isActive() && existing) {
         const appendedOutcome = `${existing.outcome}. Additionally: ${trimmed}`;
         state.updateOutcome(appendedOutcome);
-        updateUI(ctx, state.getState());
+        updateUI(ctx, widgetState, state.getState());
 
         ctx.ui.notify(
           `Supervisor goal expanded: "${trimmed.slice(0, 50)}${trimmed.length > 50 ? '…' : ''}" added to active supervision.`,
@@ -473,7 +490,7 @@ export default function (pi: ExtensionAPI) {
 
       state.start(trimmed, provider, modelId);
       idleSteers = 0;
-      updateUI(ctx, state.getState());
+      updateUI(ctx, widgetState, state.getState());
 
       // Kickstart the agent if idle - the user just set a goal, they want work to start
       if (ctx.isIdle()) {
@@ -531,7 +548,7 @@ export default function (pi: ExtensionAPI) {
       state.start(params.outcome, provider, modelId);
       idleSteers = 0;
       currentCtx = ctx;
-      updateUI(ctx, state.getState());
+      updateUI(ctx, widgetState, state.getState());
 
       // Kickstart the agent if idle - model-initiated supervision should trigger work
       if (ctx.isIdle()) {

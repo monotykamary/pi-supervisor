@@ -9,314 +9,38 @@
  */
 
 import type { ExtensionContext } from '@mariozechner/pi-coding-agent';
-import { truncateToWidth } from '@mariozechner/pi-tui';
-import type { SupervisorIntervention, SupervisorState } from '../types.js';
+import type { SupervisorState } from '../types.js';
+import { createInitialState, type WidgetAction, WIDGET_ID, STATUS_ID } from './types.js';
+import {
+  toggleWidget as toggleWidgetImpl,
+  isWidgetVisible as isVisibleImpl,
+  updateUI as updateUIImpl,
+} from './renderer.js';
 
-const WIDGET_ID = 'supervisor';
-const STATUS_ID = 'supervisor';
-const CLEAR_DELAY_MS = 15000;
-const ANIMATION_STEP_MS = 500;
-
-let _widgetVisible = true;
-let _clearTimer: ReturnType<typeof setTimeout> | null = null;
-let _animationTimer: ReturnType<typeof setTimeout> | null = null;
-let _lastActiveState: { outcome: string; interventions: SupervisorIntervention[] } | null = null;
-let _lastThinking = '';
-let _lastActionType: WidgetAction['type'] = 'watching';
-let _storedAction: WidgetAction | null = null;
-let _lastRenderedWidth = 80;
-let _lastThinkingLines: string[] = [];
-let _hiddenFromBottomCount = 0;
+// Module-level state instance
+const state = createInitialState();
 
 /** Toggle the widget on/off. Returns the new visibility state. */
 export function toggleWidget(): boolean {
-  _widgetVisible = !_widgetVisible;
-  return _widgetVisible;
+  return toggleWidgetImpl(state);
 }
 
+/** Check if the widget is currently visible. */
 export function isWidgetVisible(): boolean {
-  return _widgetVisible;
+  return isVisibleImpl(state);
 }
 
-export type WidgetAction =
-  | { type: 'watching'; reframeTier?: number }
-  | { type: 'analyzing'; turn: number; reframeTier?: number; thinking?: string }
-  | { type: 'steering'; message: string; reframeTier?: number }
-  | { type: 'done'; reframeTier?: number }
-  | { type: 'waiting'; message: string; turn: number; reframeTier?: number }
-  | { type: 'inferring' };
-
-/**
- * Update footer + widget. Call this every time state or action changes.
- * Clears both when state is null or inactive, with a 15-second delay and
- * line-by-line animation for clearing thoughts.
- */
+/** Update footer + widget. Call this every time state or action changes. */
 export function updateUI(
   ctx: ExtensionContext,
-  state: SupervisorState | null,
+  supervisorState: SupervisorState | null,
   action: WidgetAction = { type: 'watching' }
 ): void {
-  // Check if we're receiving new thinking content - if so, clear old thoughts immediately
-  const hasNewThinking =
-    action.type === 'analyzing' && action.thinking && action.thinking !== _lastThinking;
-
-  // When leaving 'analyzing' mode, immediately clear thinking text (don't animate stale thoughts)
-  const leavingAnalyzing = _lastActionType === 'analyzing' && action.type !== 'analyzing';
-
-  if (_clearTimer) {
-    clearTimeout(_clearTimer);
-    _clearTimer = null;
-  }
-  if (_animationTimer) {
-    clearTimeout(_animationTimer);
-    _animationTimer = null;
-  }
-
-  // If we have new thinking, or we're leaving analyzing mode, reset the clear animation state
-  // immediately so old thoughts don't flash back
-  if (hasNewThinking || leavingAnalyzing) {
-    _hiddenFromBottomCount = 0;
-    _lastThinkingLines = [];
-    if (leavingAnalyzing) {
-      _lastThinking = '';
-    }
-  }
-
-  // Always update last state first so animation uses latest intervention count
-  if (state?.active) {
-    _lastActiveState = {
-      outcome: state.outcome,
-      interventions: [...state.interventions],
-    };
-    _lastActionType = action.type;
-    if (action.type === 'analyzing' && action.thinking) {
-      _lastThinking = action.thinking;
-    }
-  }
-
-  // Handle inferring specially - show widget even without active state
-  if (action.type === 'inferring') {
-    ctx.ui.setStatus(STATUS_ID, '🎯');
-    if (_widgetVisible) {
-      // Always use empty goal during inference - we don't know it yet
-      const inferState = { outcome: '', interventions: _lastActiveState?.interventions ?? [] };
-      renderWithState(ctx, inferState, action, '', 0);
-    }
-    return;
-  }
-
-  const shouldAnimate = !state || !state.active || action.type === 'steering';
-
-  if (shouldAnimate && _lastActiveState && _lastThinkingLines.length > 0 && !leavingAnalyzing) {
-    _clearTimer = setTimeout(() => {
-      startLineClearAnimation(ctx);
-    }, CLEAR_DELAY_MS);
-    const fallbackAction: WidgetAction =
-      action.type === 'steering'
-        ? { type: 'steering', message: '', reframeTier: action.reframeTier }
-        : { type: 'done', reframeTier: 0 };
-    _lastActionType = fallbackAction.type;
-    _storedAction = fallbackAction;
-    renderWithState(
-      ctx,
-      _lastActiveState,
-      fallbackAction,
-      leavingAnalyzing ? '' : _lastThinking,
-      _hiddenFromBottomCount
-    );
-    return;
-  }
-
-  if (!state || !state.active) {
-    _lastThinkingLines = [];
-    ctx.ui.setStatus(STATUS_ID, undefined);
-    ctx.ui.setWidget(WIDGET_ID, undefined);
-    return;
-  }
-
-  ctx.ui.setStatus(STATUS_ID, '🎯');
-
-  if (!_widgetVisible) {
-    ctx.ui.setWidget(WIDGET_ID, undefined);
-    return;
-  }
-
-  renderWithState(ctx, _lastActiveState!, action, _lastThinking, _hiddenFromBottomCount);
+  return updateUIImpl(ctx, state, supervisorState, action);
 }
 
-/** Start the line-by-line clear animation - hides lines from bottom to top */
-function startLineClearAnimation(ctx: ExtensionContext): void {
-  if (!_lastActiveState || _lastThinkingLines.length === 0) return;
+// Re-export types
+export type { WidgetAction } from './types.js';
 
-  const isSteering = _lastActionType === 'steering';
-  const targetVisibleCount = 0;
-
-  const animateStep = () => {
-    const currentVisible = _lastThinkingLines.length - _hiddenFromBottomCount;
-
-    if (currentVisible <= targetVisibleCount) {
-      if (isSteering) {
-        _lastThinkingLines = [];
-        _hiddenFromBottomCount = 0;
-        const reframeTier =
-          _storedAction?.type === 'steering' ? (_storedAction.reframeTier ?? 0) : 0;
-        renderWithState(
-          ctx,
-          _lastActiveState!,
-          { type: 'steering', message: '', reframeTier },
-          '',
-          0
-        );
-        return;
-      } else {
-        _lastActiveState = null;
-        _lastThinking = '';
-        _lastThinkingLines = [];
-        _hiddenFromBottomCount = 0;
-        _storedAction = null;
-        ctx.ui.setStatus(STATUS_ID, undefined);
-        ctx.ui.setWidget(WIDGET_ID, undefined);
-        return;
-      }
-    }
-
-    _hiddenFromBottomCount++;
-    const reframeTier = _storedAction?.type === 'steering' ? (_storedAction.reframeTier ?? 0) : 0;
-    const fallbackAction: WidgetAction = isSteering
-      ? { type: 'steering', message: '', reframeTier }
-      : { type: 'done', reframeTier: 0 };
-    renderWithState(ctx, _lastActiveState!, fallbackAction, '', _hiddenFromBottomCount);
-
-    _animationTimer = setTimeout(animateStep, ANIMATION_STEP_MS);
-  };
-
-  animateStep();
-}
-
-function renderWithState(
-  ctx: ExtensionContext,
-  snap: { outcome: string; interventions: SupervisorIntervention[] },
-  action: WidgetAction,
-  lastThinking: string,
-  hideFromBottom: number = 0
-): void {
-  ctx.ui.setWidget(WIDGET_ID, (_tui, theme) => {
-    let actionStr: string;
-    let thinking = lastThinking;
-    switch (action.type) {
-      case 'watching':
-        actionStr = theme.fg('dim', 'watching');
-        break;
-      case 'analyzing':
-        actionStr = theme.fg('warning', `⟳ turn ${action.turn}`);
-        thinking = action.thinking ?? lastThinking;
-        break;
-      case 'steering':
-        actionStr = theme.fg('warning', 'steering');
-        break;
-      case 'done':
-        actionStr = theme.fg('accent', '✓ done');
-        break;
-      case 'waiting':
-        actionStr = theme.fg('warning', `⏳ ${action.message}`);
-        break;
-      case 'inferring':
-        actionStr = theme.fg('dim', 'scanning');
-        break;
-    }
-
-    const sep = theme.fg('dim', ' · ');
-    let headerText: string;
-    if (action.type === 'done') headerText = 'Supervised';
-    else if (action.type === 'inferring') headerText = 'Inferring';
-    else headerText = 'Supervising';
-    const header = `${theme.fg('accent', '◉')} ${theme.fg('accent', headerText)}`;
-    const hasGoal = snap.outcome.length > 0;
-    const goalLabel = hasGoal ? `${theme.fg('dim', 'Goal:')} ` : '';
-    const goalQuoteOpen = hasGoal ? theme.fg('muted', '"') : '';
-    const goalQuoteClose = hasGoal ? theme.fg('muted', '"') : '';
-
-    const steerCount = snap.interventions.length;
-    const steers = steerCount > 0 ? theme.fg('dim', `↗ ${steerCount}`) : '';
-    const reframeTier = 'reframeTier' in action ? (action.reframeTier ?? 0) : 0;
-    const reframeStr = reframeTier > 0 ? theme.fg('error', `↻${reframeTier}`) : '';
-    const suffixParts = [steers, reframeStr, actionStr].filter(Boolean);
-
-    const thinkingPrefix = theme.fg('dim', '  ');
-    const rawThinking = thinking;
-
-    return {
-      render: (width: number) => {
-        const paddedWidth = Math.max(0, width - 1);
-        _lastRenderedWidth = paddedWidth;
-        const suffix = suffixParts.length > 0 ? sep + suffixParts.join(sep) : '';
-
-        const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, '');
-
-        let line: string;
-        if (hasGoal) {
-          const prefix = header + sep + goalLabel + goalQuoteOpen;
-          const prefixWidth = stripAnsi(prefix).length;
-          const suffixWidth = stripAnsi(suffix).length;
-          const closeQuoteWidth = stripAnsi(goalQuoteClose).length;
-          const availableForGoal = Math.max(
-            0,
-            paddedWidth - prefixWidth - suffixWidth - closeQuoteWidth
-          );
-          const rawGoal = snap.outcome;
-          const truncatedGoal = truncateToWidth(rawGoal, availableForGoal);
-          const goalText = theme.fg('muted', truncatedGoal);
-          line = prefix + goalText + goalQuoteClose + suffix;
-        } else {
-          const parts = [header, ...suffixParts].filter(Boolean);
-          line = parts.join(sep);
-        }
-        const l1 = truncateToWidth(line, paddedWidth);
-
-        // During animation, hide lines from the bottom
-        if (hideFromBottom > 0 && _lastThinkingLines.length > 0) {
-          const visibleCount = Math.max(0, _lastThinkingLines.length - hideFromBottom);
-          const visibleLines = _lastThinkingLines
-            .slice(0, visibleCount)
-            .map((line) => theme.fg('dim', line));
-          return [l1, ...visibleLines];
-        }
-
-        if (!rawThinking) {
-          _lastThinkingLines = [];
-          return [l1];
-        }
-
-        const thinkingIndent = stripAnsi(thinkingPrefix).length;
-        const thinkingWords = rawThinking.split(' ');
-        const thinkingLines: string[] = [];
-        const plainLines: string[] = [];
-        let currentThinkingLine = '';
-        let currentPlainLine = '';
-
-        for (const word of thinkingWords) {
-          const testLine = currentPlainLine ? `${currentPlainLine} ${word}` : word;
-          if (testLine.length <= paddedWidth - thinkingIndent) {
-            currentPlainLine = testLine;
-            currentThinkingLine = currentThinkingLine ? `${currentThinkingLine} ${word}` : word;
-          } else {
-            if (currentThinkingLine) {
-              thinkingLines.push(thinkingPrefix + theme.fg('dim', currentThinkingLine));
-              plainLines.push('  ' + currentPlainLine);
-            }
-            currentPlainLine = word;
-            currentThinkingLine = word;
-          }
-        }
-        if (currentThinkingLine) {
-          thinkingLines.push(thinkingPrefix + theme.fg('dim', currentThinkingLine));
-          plainLines.push('  ' + currentPlainLine);
-        }
-
-        _lastThinkingLines = plainLines;
-        return [l1, ...thinkingLines];
-      },
-      invalidate: () => {},
-    };
-  });
-}
+// Re-export constants for external use
+export { WIDGET_ID, STATUS_ID } from './types.js';
