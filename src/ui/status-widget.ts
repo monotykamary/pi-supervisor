@@ -78,7 +78,17 @@ export function updateUI(
     }
   }
 
-  // Start animation for done (inactive) or steering (active but intervening)
+  // Handle inferring specially - show widget even without active state
+  if (action.type === 'inferring') {
+    ctx.ui.setStatus(STATUS_ID, '🎯');
+    if (_widgetVisible) {
+      // Create minimal state for inferring display
+      const inferState = _lastActiveState ?? { outcome: '', interventions: [] };
+      renderWithState(ctx, inferState, action, '', 0);
+    }
+    return;
+  }
+
   const shouldAnimate = !state || !state.active || action.type === 'steering';
 
   if (shouldAnimate && _lastActiveState && _lastThinkingLines.length > 0) {
