@@ -1,8 +1,8 @@
 /**
- * Supervisor UI — footer status indicator and widget.
+ * Supervisor UI - footer status indicator and widget.
  *
  * Footer: 🎯 emoji badge.
- * Widget line 1: ◉ Supervising · Goal: "…" · steers · action
+ * Widget line 1: ◉ Supervising · Goal: "..." · steers · action
  * Widget line 2: dim thinking text while analyzing (temporary)
  *
  * Toggle visibility with toggleWidget().
@@ -135,25 +135,26 @@ export function updateUI(
 
         if (!rawThinking) return [l1];
 
-        // Wrap thinking text naturally into multiple lines
+        // Wrap thinking text naturally into multiple lines with dim color
         const thinkingIndent = stripAnsi(thinkingPrefix).length;
+        const dimThinking = theme.fg('dim', rawThinking);
+        const thinkingWords = rawThinking.split(' ');
         const thinkingLines: string[] = [];
-        const words = rawThinking.split(' ');
-        let currentLine = '';
+        let currentThinkingLine = '';
 
-        for (const word of words) {
-          const testLine = currentLine ? `${currentLine} ${word}` : word;
-          if (stripAnsi(testLine).length <= paddedWidth - thinkingIndent) {
-            currentLine = testLine;
+        for (const word of thinkingWords) {
+          const testLine = currentThinkingLine ? `${currentThinkingLine} ${word}` : word;
+          if (testLine.length <= paddedWidth - thinkingIndent) {
+            currentThinkingLine = testLine;
           } else {
-            if (currentLine) {
-              thinkingLines.push(thinkingPrefix + currentLine);
+            if (currentThinkingLine) {
+              thinkingLines.push(thinkingPrefix + theme.fg('dim', currentThinkingLine));
             }
-            currentLine = word;
+            currentThinkingLine = word;
           }
         }
-        if (currentLine) {
-          thinkingLines.push(thinkingPrefix + currentLine);
+        if (currentThinkingLine) {
+          thinkingLines.push(thinkingPrefix + theme.fg('dim', currentThinkingLine));
         }
 
         return [l1, ...thinkingLines];
