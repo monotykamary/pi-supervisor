@@ -298,11 +298,8 @@ export default function (pi: ExtensionAPI) {
               idleSteers = 0;
               updateUI(ctx, state.getState());
 
-              const { source } = loadSystemPrompt(ctx.cwd);
-              const promptLabel =
-                source === 'built-in' ? 'built-in prompt' : source.replace(ctx.cwd, '.');
               ctx.ui.notify(
-                `Supervisor active: "${inferred.slice(0, 50)}${inferred.length > 50 ? '…' : ''}" | ${startProvider}/${startModelId} | ${promptLabel}`,
+                `Supervisor active: "${inferred.slice(0, 50)}${inferred.length > 50 ? '…' : ''}"`,
                 'info'
               );
               return;
@@ -392,10 +389,8 @@ export default function (pi: ExtensionAPI) {
       idleSteers = 0;
       updateUI(ctx, state.getState());
 
-      const { source } = loadSystemPrompt(ctx.cwd);
-      const promptLabel = source === 'built-in' ? 'built-in prompt' : source.replace(ctx.cwd, '.');
       ctx.ui.notify(
-        `Supervisor active: "${trimmed.slice(0, 50)}${trimmed.length > 50 ? '…' : ''}" | ${provider}/${modelId} | ${promptLabel}`,
+        `Supervisor active: "${trimmed.slice(0, 50)}${trimmed.length > 50 ? '…' : ''}"`,
         'info'
       );
     },
@@ -445,12 +440,9 @@ export default function (pi: ExtensionAPI) {
       currentCtx = ctx;
       updateUI(ctx, state.getState());
 
-      const { source } = loadSystemPrompt(ctx.cwd);
-      const promptLabel = source === 'built-in' ? 'built-in prompt' : '.pi/SUPERVISOR.md';
-
       // Notify the user so they're aware supervision was initiated by the model
       ctx.ui.notify(
-        `Supervisor started by agent: "${params.outcome.slice(0, 60)}${params.outcome.length > 60 ? '…' : ''}" · ${promptLabel}`,
+        `Supervisor started by agent: "${params.outcome.slice(0, 60)}${params.outcome.length > 60 ? '…' : ''}"`,
         'info'
       );
 
