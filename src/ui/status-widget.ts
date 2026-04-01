@@ -24,6 +24,7 @@ let _lastActiveState: { outcome: string; interventions: SupervisorIntervention[]
 let _lastThinking = '';
 let _lastActionType: WidgetAction['type'] = 'watching';
 let _storedAction: WidgetAction | null = null;
+let _lastRenderedWidth = 80;
 let _lastThinkingLines: string[] = [];
 let _hiddenFromBottomCount = 0;
 
@@ -119,9 +120,12 @@ function startLineClearAnimation(ctx: ExtensionContext): void {
 
     if (currentVisible <= targetVisibleCount) {
       if (isSteering && _lastThinkingLines.length > 0) {
-        // Keep first (oldest) line, truncate end to fit with ...
+        // Keep first (oldest) line, truncate end to fit with ... (avoid double …)
         const firstLine = _lastThinkingLines[0].replace(/^  /, '');
-        _lastThinkingLines = ['  ' + truncateToWidth(firstLine, 77) + '...'];
+        const maxLen = Math.max(0, _lastRenderedWidth - 2 - 3); // 2 for indent, 3 for ...
+        const truncated =
+          firstLine.length > maxLen ? firstLine.slice(0, maxLen) + '...' : firstLine;
+        _lastThinkingLines = ['  ' + truncated];
         _hiddenFromBottomCount = 0;
         // Use stored action to preserve reframe tier
         const reframeTier =
@@ -208,6 +212,7 @@ function renderWithState(
     return {
       render: (width: number) => {
         const paddedWidth = Math.max(0, width - 1);
+        _lastRenderedWidth = paddedWidth;
         const suffix = suffixParts.length > 0 ? sep + suffixParts.join(sep) : '';
         const prefix = header + sep + goalLabel + goalQuoteOpen;
 
