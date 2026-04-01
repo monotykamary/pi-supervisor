@@ -82,8 +82,8 @@ export function updateUI(
   if (action.type === 'inferring') {
     ctx.ui.setStatus(STATUS_ID, '🎯');
     if (_widgetVisible) {
-      // Create minimal state for inferring display
-      const inferState = _lastActiveState ?? { outcome: '', interventions: [] };
+      // Always use empty goal during inference - we don't know it yet
+      const inferState = { outcome: '', interventions: _lastActiveState?.interventions ?? [] };
       renderWithState(ctx, inferState, action, '', 0);
     }
     return;
