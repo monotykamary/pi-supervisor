@@ -278,11 +278,11 @@ export default function (pi: ExtensionAPI) {
           }
 
           if (choice === 'Infer goal from conversation') {
-            ctx.ui.setStatus('supervisor', 'Inferring goal from conversation...');
+            updateUI(ctx, state.getState(), { type: 'inferring' });
             const inferProvider = defaultProvider ?? sessionModel?.provider ?? 'unknown';
             const inferModelId = defaultModelId ?? sessionModel?.id ?? 'unknown';
             const inferred = await inferOutcome(ctx, inferProvider, inferModelId);
-            ctx.ui.setStatus('supervisor', undefined);
+            updateUI(ctx, state.getState());
 
             if (!inferred) {
               ctx.ui.notify(

@@ -43,7 +43,8 @@ export type WidgetAction =
   | { type: 'analyzing'; turn: number; reframeTier?: number; thinking?: string }
   | { type: 'steering'; message: string; reframeTier?: number }
   | { type: 'done'; reframeTier?: number }
-  | { type: 'waiting'; message: string; turn: number; reframeTier?: number };
+  | { type: 'waiting'; message: string; turn: number; reframeTier?: number }
+  | { type: 'inferring' };
 
 /**
  * Update footer + widget. Call this every time state or action changes.
@@ -187,11 +188,16 @@ function renderWithState(
       case 'waiting':
         actionStr = theme.fg('warning', `⏳ ${action.message}`);
         break;
+      case 'inferring':
+        actionStr = theme.fg('dim', 'inferring');
+        break;
     }
 
     const sep = theme.fg('dim', ' · ');
-    const isDone = action.type === 'done';
-    const headerText = isDone ? 'Supervised' : 'Supervising';
+    let headerText: string;
+    if (action.type === 'done') headerText = 'Supervised';
+    else if (action.type === 'inferring') headerText = 'Inferring';
+    else headerText = 'Supervising';
     const header = `${theme.fg('accent', '◉')} ${theme.fg('accent', headerText)}`;
     const goalLabel = `${theme.fg('dim', 'Goal:')} `;
     const goalQuoteOpen = theme.fg('muted', '"');
@@ -199,7 +205,7 @@ function renderWithState(
 
     const steerCount = snap.interventions.length;
     const steers = steerCount > 0 ? theme.fg('dim', `↗ ${steerCount}`) : '';
-    const reframeTier = action.reframeTier ?? 0;
+    const reframeTier = 'reframeTier' in action ? (action.reframeTier ?? 0) : 0;
     const reframeStr = reframeTier > 0 ? theme.fg('error', `↻${reframeTier}`) : '';
     const suffixParts = [steers, reframeStr, actionStr].filter(Boolean);
 
