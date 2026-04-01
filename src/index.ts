@@ -84,18 +84,84 @@ export default function (pi: ExtensionAPI) {
   pi.on('session_switch', async (_event, ctx) => onSessionLoad(ctx));
   pi.on('session_fork', async (_event, ctx) => onSessionLoad(ctx));
   pi.on('session_tree', async (_event, ctx) => onSessionLoad(ctx));
-  pi.on('session_compact', async (_event, ctx) => {
-    // After compaction, the session is reloaded with a summary.
-    // Reload supervisor state from the remaining entries (compaction may have
-    // summarized away old state entries).
-    currentCtx = ctx;
-    state.loadFromSession(ctx);
-    // If state was active but lost in compaction, re-persist it so future
-    // compactions will find it in the kept portion.
+
+  // ---- Compaction survival: persist state BEFORE compaction ----
+  // This ensures supervisor-state is in the "kept" (recent) portion,
+  // not the summarized portion, so it survives autocompaction.
+  pi.on('session_before_compact', async (_event, ctx) => {
     if (state.isActive()) {
       state.persist();
     }
-    updateUI(ctx, state.getState());
+  });
+
+  // ---- After compaction: reload state and steer if needed ----
+  pi.on('session_compact', async (_event, ctx) => {
+    currentCtx = ctx;
+    state.loadFromSession(ctx);
+
+    // State should now be found (we persisted before compaction)
+    if (!state.isActive()) {
+      // If somehow still lost, clear UI
+      updateUI(ctx, null);
+      return;
+    }
+
+    // Update UI to show we're back
+    updateUI(ctx, state.getState(), { type: 'watching', reframeTier: state.getReframeTier() });
+
+    // If agent is idle after compaction, analyze and steer to get back on track
+    // Compaction often happens mid-conversation, so we need to check if we're still on goal
+    if (ctx.isIdle()) {
+      const s = state.getState()!;
+      updateUI(ctx, s, {
+        type: 'analyzing',
+        turn: s.turnCount,
+        reframeTier: state.getReframeTier(),
+      });
+
+      const decision = await analyze(
+        ctx,
+        s,
+        true /* agent idle after compaction */,
+        undefined,
+        undefined,
+        (accumulated) => {
+          const thinking = extractThinking(accumulated);
+          updateUI(ctx, state.getState()!, {
+            type: 'analyzing',
+            turn: s.turnCount,
+            reframeTier: state.getReframeTier(),
+            thinking,
+          });
+        }
+      );
+
+      if (decision.action === 'steer' && decision.message) {
+        idleSteers++;
+        state.addIntervention({
+          turnCount: s.turnCount,
+          message: decision.message,
+          reasoning: decision.reasoning,
+          timestamp: Date.now(),
+          asi: decision.asi,
+        });
+        updateUI(ctx, state.getState(), {
+          type: 'steering',
+          message: decision.message,
+          reframeTier: state.getReframeTier(),
+        });
+        pi.sendUserMessage(decision.message);
+      } else if (decision.action === 'done') {
+        idleSteers = 0;
+        state.resetReframeTier();
+        updateUI(ctx, state.getState(), { type: 'done' });
+        state.stop();
+        disposeSession();
+        updateUI(ctx, state.getState());
+      } else {
+        updateUI(ctx, state.getState(), { type: 'watching', reframeTier: state.getReframeTier() });
+      }
+    }
   });
 
   // ---- Keep ctx fresh ----
