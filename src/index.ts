@@ -396,20 +396,14 @@ export default function (pi: ExtensionAPI) {
     description:
       'Activate the supervisor to track the conversation toward a specific outcome. ' +
       'The supervisor will observe every turn and steer the agent if it drifts. ' +
-      'Once supervision is active it is locked — only the user can change or stop it.',
+      'Once supervision is active it is locked — only the user can change or stop it. ' +
+      'Uses the global config model or active chat model (model cannot be specified).',
     parameters: Type.Object({
       outcome: Type.String({
         description:
           'The desired end-state to supervise toward. Be specific and measurable ' +
           "(e.g. 'Implement JWT auth with refresh tokens and full test coverage').",
       }),
-      model: Type.Optional(
-        Type.String({
-          description:
-            "Supervisor model as 'provider/modelId' (e.g. 'anthropic/claude-haiku-4-5-20251001'). " +
-            'Defaults to workspace config, then the active chat model.',
-        })
-      ),
     }),
     execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
       const text = (msg: string) => ({
@@ -427,25 +421,11 @@ export default function (pi: ExtensionAPI) {
         );
       }
 
-      // Resolve model: tool param → global config → active session model
-      let provider: string;
-      let modelId: string;
-      if (params.model) {
-        const slash = params.model.indexOf('/');
-        if (slash === -1) {
-          // No provider specified, use the session's current provider
-          provider = ctx.model?.provider ?? 'unknown';
-          modelId = params.model;
-        } else {
-          provider = params.model.slice(0, slash);
-          modelId = params.model.slice(slash + 1);
-        }
-      } else {
-        const globalModel = loadGlobalModel();
-        const sessionModel = ctx.model;
-        provider = globalModel?.provider ?? sessionModel?.provider ?? 'unknown';
-        modelId = globalModel?.modelId ?? sessionModel?.id ?? 'unknown';
-      }
+      // Resolve model from global config or active session model (AI cannot choose)
+      const globalModel = loadGlobalModel();
+      const sessionModel = ctx.model;
+      const provider = globalModel?.provider ?? sessionModel?.provider ?? 'unknown';
+      const modelId = globalModel?.modelId ?? sessionModel?.id ?? 'unknown';
 
       state.start(params.outcome, provider, modelId);
       idleSteers = 0;
