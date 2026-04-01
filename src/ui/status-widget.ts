@@ -125,7 +125,9 @@ function renderWithState(
 
     // Build widget parts for middle truncation (goal is truncated, suffix is preserved)
     const sep = theme.fg('dim', ' · ');
-    const header = `${theme.fg('accent', '◉')} ${theme.fg('accent', 'Supervising')}`;
+    const isDone = action.type === 'done';
+    const headerText = isDone ? 'Supervised' : 'Supervising';
+    const header = `${theme.fg('accent', '◉')} ${theme.fg('accent', headerText)}`;
     const goalLabel = `${theme.fg('dim', 'Goal:')} `;
     const goalQuoteOpen = theme.fg('muted', '"');
     const goalQuoteClose = theme.fg('muted', '"');

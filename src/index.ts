@@ -213,7 +213,6 @@ export default function (pi: ExtensionAPI) {
       idleSteers = 0;
       state.resetReframeTier();
       updateUI(ctx, state.getState(), { type: 'done' });
-      ctx.ui.notify(`Supervisor: outcome achieved! "${s.outcome}"`, 'info');
       state.stop();
       disposeSession(); // Clean up reusable session
       updateUI(ctx, state.getState());
