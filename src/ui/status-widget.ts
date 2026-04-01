@@ -23,8 +23,8 @@ let _animationTimer: ReturnType<typeof setTimeout> | null = null;
 let _lastActiveState: { outcome: string; interventions: SupervisorIntervention[] } | null = null;
 let _lastThinking = '';
 let _lastActionType: WidgetAction['type'] = 'watching';
-let _lastThinkingLines: string[] = []; // Actual rendered thinking lines (plain text with indent)
-let _hiddenLineCount = 0; // Number of lines hidden from top during animation
+let _lastThinkingLines: string[] = [];
+let _hiddenFromBottomCount = 0;
 
 /** Toggle the widget on/off. Returns the new visibility state. */
 export function toggleWidget(): boolean {
@@ -53,7 +53,6 @@ export function updateUI(
   state: SupervisorState | null,
   action: WidgetAction = { type: 'watching' }
 ): void {
-  // Cancel any pending timers when state updates
   if (_clearTimer) {
     clearTimeout(_clearTimer);
     _clearTimer = null;
@@ -62,29 +61,24 @@ export function updateUI(
     clearTimeout(_animationTimer);
     _animationTimer = null;
   }
-  // Reset animation state
-  _hiddenLineCount = 0;
+  _hiddenFromBottomCount = 0;
 
   if (!state || !state.active) {
-    // State became inactive - start animation after delay
     if (_lastActiveState && _lastThinkingLines.length > 0) {
       _clearTimer = setTimeout(() => {
         startLineClearAnimation(ctx);
       }, CLEAR_DELAY_MS);
-      // Continue rendering with last known state
       const fallbackAction: WidgetAction = { type: 'done', reframeTier: 0 };
       _lastActionType = 'done';
-      renderWithState(ctx, _lastActiveState, fallbackAction, _lastThinking, _hiddenLineCount);
+      renderWithState(ctx, _lastActiveState, fallbackAction, _lastThinking, _hiddenFromBottomCount);
       return;
     }
-    // No previous state or no thinking lines to animate, clear immediately
     _lastThinkingLines = [];
     ctx.ui.setStatus(STATUS_ID, undefined);
     ctx.ui.setWidget(WIDGET_ID, undefined);
     return;
   }
 
-  // Active state - capture it for delayed clear
   _lastActiveState = {
     outcome: state.outcome,
     interventions: [...state.interventions],
@@ -101,25 +95,25 @@ export function updateUI(
     return;
   }
 
-  renderWithState(ctx, _lastActiveState, action, _lastThinking, _hiddenLineCount);
+  renderWithState(ctx, _lastActiveState, action, _lastThinking, _hiddenFromBottomCount);
 }
 
-/** Start the line-by-line clear animation - hides lines from top to bottom */
+/** Start the line-by-line clear animation - hides lines from bottom to top */
 function startLineClearAnimation(ctx: ExtensionContext): void {
   if (!_lastActiveState || _lastThinkingLines.length === 0) return;
 
   const isSteering = _lastActionType === 'steering';
-  // For steering: keep 1 line (will be truncated to ... at end)
-  // For done: clear all lines
-  const targetHiddenCount = isSteering ? _lastThinkingLines.length - 1 : _lastThinkingLines.length;
+  const targetVisibleCount = isSteering ? 1 : 0;
 
   const animateStep = () => {
-    if (_hiddenLineCount >= targetHiddenCount) {
+    const currentVisible = _lastThinkingLines.length - _hiddenFromBottomCount;
+
+    if (currentVisible <= targetVisibleCount) {
       if (isSteering && _lastThinkingLines.length > 0) {
-        // Keep last line truncated with ...
-        const lastLine = _lastThinkingLines[_lastThinkingLines.length - 1].replace(/^  /, '');
-        _lastThinkingLines = ['  ' + truncateToWidth(lastLine, 77) + '...'];
-        _hiddenLineCount = 0;
+        // Keep first (oldest) line, truncate end to fit with ...
+        const firstLine = _lastThinkingLines[0].replace(/^  /, '');
+        _lastThinkingLines = ['  ' + truncateToWidth(firstLine, 77) + '...'];
+        _hiddenFromBottomCount = 0;
         renderWithState(
           ctx,
           _lastActiveState!,
@@ -129,22 +123,21 @@ function startLineClearAnimation(ctx: ExtensionContext): void {
         );
         return;
       } else {
-        // Done state - clear everything
         _lastActiveState = null;
         _lastThinking = '';
         _lastThinkingLines = [];
-        _hiddenLineCount = 0;
+        _hiddenFromBottomCount = 0;
         ctx.ui.setStatus(STATUS_ID, undefined);
         ctx.ui.setWidget(WIDGET_ID, undefined);
         return;
       }
     }
 
-    _hiddenLineCount++;
+    _hiddenFromBottomCount++;
     const fallbackAction: WidgetAction = isSteering
       ? { type: 'steering', message: '', reframeTier: 0 }
       : { type: 'done', reframeTier: 0 };
-    renderWithState(ctx, _lastActiveState!, fallbackAction, '', _hiddenLineCount);
+    renderWithState(ctx, _lastActiveState!, fallbackAction, '', _hiddenFromBottomCount);
 
     _animationTimer = setTimeout(animateStep, ANIMATION_STEP_MS);
   };
@@ -157,10 +150,9 @@ function renderWithState(
   snap: { outcome: string; interventions: SupervisorIntervention[] },
   action: WidgetAction,
   lastThinking: string,
-  hideFromTop: number = 0
+  hideFromBottom: number = 0
 ): void {
   ctx.ui.setWidget(WIDGET_ID, (_tui, theme) => {
-    // Current action
     let actionStr: string;
     let thinking = lastThinking;
     switch (action.type) {
@@ -182,7 +174,6 @@ function renderWithState(
         break;
     }
 
-    // Build widget parts for middle truncation (goal is truncated, suffix is preserved)
     const sep = theme.fg('dim', ' · ');
     const isDone = action.type === 'done';
     const headerText = isDone ? 'Supervised' : 'Supervising';
@@ -191,7 +182,6 @@ function renderWithState(
     const goalQuoteOpen = theme.fg('muted', '"');
     const goalQuoteClose = theme.fg('muted', '"');
 
-    // Suffix parts (preserved - not truncated)
     const steerCount = snap.interventions.length;
     const steers = steerCount > 0 ? theme.fg('dim', `↗ ${steerCount}`) : '';
     const reframeTier = action.reframeTier ?? 0;
@@ -203,15 +193,10 @@ function renderWithState(
 
     return {
       render: (width: number) => {
-        // Add 1 space padding on the right so widget doesn't hug the edge
         const paddedWidth = Math.max(0, width - 1);
-
-        // Build suffix first (we want to preserve these)
         const suffix = suffixParts.length > 0 ? sep + suffixParts.join(sep) : '';
         const prefix = header + sep + goalLabel + goalQuoteOpen;
 
-        // Calculate available space for goal text (using padded width)
-        // Strip ANSI for accurate width calculation
         const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, '');
         const prefixWidth = stripAnsi(prefix).length;
         const suffixWidth = stripAnsi(suffix).length;
@@ -221,19 +206,18 @@ function renderWithState(
           paddedWidth - prefixWidth - suffixWidth - closeQuoteWidth
         );
 
-        // Truncate goal to fit available space
         const rawGoal = snap.outcome;
         const truncatedGoal = truncateToWidth(rawGoal, availableForGoal);
         const goalText = theme.fg('muted', truncatedGoal);
 
-        // Assemble final line (truncated to padded width)
         const line = prefix + goalText + goalQuoteClose + suffix;
         const l1 = truncateToWidth(line, paddedWidth);
 
-        // During animation, show stored lines with top lines hidden
-        if (hideFromTop > 0 && _lastThinkingLines.length > 0) {
+        // During animation, hide lines from the bottom (keep top/oldest visible)
+        if (hideFromBottom > 0 && _lastThinkingLines.length > 0) {
+          const visibleCount = Math.max(0, _lastThinkingLines.length - hideFromBottom);
           const visibleLines = _lastThinkingLines
-            .slice(hideFromTop)
+            .slice(0, visibleCount)
             .map((line) => theme.fg('dim', line));
           return [l1, ...visibleLines];
         }
@@ -243,7 +227,6 @@ function renderWithState(
           return [l1];
         }
 
-        // Wrap thinking text naturally into multiple lines with dim color
         const thinkingIndent = stripAnsi(thinkingPrefix).length;
         const thinkingWords = rawThinking.split(' ');
         const thinkingLines: string[] = [];
@@ -270,9 +253,7 @@ function renderWithState(
           plainLines.push('  ' + currentPlainLine);
         }
 
-        // Store plain wrapped lines for animation
         _lastThinkingLines = plainLines;
-
         return [l1, ...thinkingLines];
       },
       invalidate: () => {},
