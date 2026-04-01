@@ -437,11 +437,11 @@ export default function (pi: ExtensionAPI) {
 
       // Notify the user so they're aware supervision was initiated by the model
       ctx.ui.notify(
-        `Supervisor started by agent: "${params.outcome.slice(0, 60)}${params.outcome.length > 60 ? '…' : ''}" | ${provider}/${modelId} | ${promptLabel}`,
+        `Supervisor started by agent: "${params.outcome.slice(0, 60)}${params.outcome.length > 60 ? '…' : ''}" · ${promptLabel}`,
         'info'
       );
 
-      return text(`Supervision active. Outcome: "${params.outcome}" | ${provider}/${modelId}`);
+      return text(`Supervision active. Outcome: "${params.outcome}"`);
     },
   });
 }
