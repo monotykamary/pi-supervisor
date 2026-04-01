@@ -7,11 +7,11 @@
  * Removed: sensitivity (now automatic)
  */
 
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { join } from 'node:path';
 
-const CONFIG_DIR = ".pi";
-const CONFIG_FILE = "supervisor-config.json";
+const CONFIG_DIR = '.pi';
+const CONFIG_FILE = 'supervisor-config.json';
 
 interface SupervisorConfig {
   model?: {
@@ -26,7 +26,7 @@ export function loadGlobalModel(): { provider: string; modelId: string } | null 
   if (!existsSync(configPath)) return null;
 
   try {
-    const content = readFileSync(configPath, "utf-8");
+    const content = readFileSync(configPath, 'utf-8');
     const parsed = JSON.parse(content) as SupervisorConfig;
     if (parsed.model?.provider && parsed.model?.modelId) {
       return { provider: parsed.model.provider, modelId: parsed.model.modelId };
@@ -45,7 +45,7 @@ export function saveGlobalModel(provider: string, modelId: string): void {
   let existing: SupervisorConfig = {};
   if (existsSync(configPath)) {
     try {
-      existing = JSON.parse(readFileSync(configPath, "utf-8")) as SupervisorConfig;
+      existing = JSON.parse(readFileSync(configPath, 'utf-8')) as SupervisorConfig;
     } catch {
       // ignore parse errors
     }
@@ -56,7 +56,7 @@ export function saveGlobalModel(provider: string, modelId: string): void {
   if (!existsSync(configDir)) {
     mkdirSync(configDir, { recursive: true });
   }
-  writeFileSync(configPath, JSON.stringify(existing, null, 2), "utf-8");
+  writeFileSync(configPath, JSON.stringify(existing, null, 2), 'utf-8');
 }
 
 /** Clear the supervisor config file. */
@@ -64,10 +64,10 @@ export function clearGlobalConfig(): void {
   const configPath = join(process.cwd(), CONFIG_DIR, CONFIG_FILE);
   if (existsSync(configPath)) {
     try {
-      const content = readFileSync(configPath, "utf-8");
+      const content = readFileSync(configPath, 'utf-8');
       const parsed = JSON.parse(content) as SupervisorConfig;
       delete parsed.model;
-      writeFileSync(configPath, JSON.stringify(parsed, null, 2), "utf-8");
+      writeFileSync(configPath, JSON.stringify(parsed, null, 2), 'utf-8');
     } catch {
       // ignore errors
     }

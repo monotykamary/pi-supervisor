@@ -2,13 +2,18 @@
  * SupervisorStateManager — manages in-memory supervisor state and session persistence.
  */
 
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
-import type { SupervisorState, SupervisorIntervention, ConversationMessage, ReframeTier } from "./types.js";
+import type { ExtensionAPI, ExtensionContext } from '@mariozechner/pi-coding-agent';
+import type {
+  SupervisorState,
+  SupervisorIntervention,
+  ConversationMessage,
+  ReframeTier,
+} from './types.js';
 
-const ENTRY_TYPE = "supervisor-state";
+const ENTRY_TYPE = 'supervisor-state';
 
-export const DEFAULT_PROVIDER = "anthropic";
-export const DEFAULT_MODEL_ID = "claude-haiku-4-5-20251001";
+export const DEFAULT_PROVIDER = 'anthropic';
+export const DEFAULT_MODEL_ID = 'claude-haiku-4-5-20251001';
 
 export class SupervisorStateManager {
   private state: SupervisorState | null = null;
@@ -118,13 +123,20 @@ export class SupervisorStateManager {
    * Detect if recent interventions show a pattern of ineffectiveness.
    * Returns similarity info if the last 2+ steering messages are similar.
    */
-  detectIneffectivePattern(): { detected: boolean; similarCount: number; turnsSinceLastSteer: number } {
+  detectIneffectivePattern(): {
+    detected: boolean;
+    similarCount: number;
+    turnsSinceLastSteer: number;
+  } {
     if (!this.state) return { detected: false, similarCount: 0, turnsSinceLastSteer: 0 };
 
     const turnsSinceLastSteer = this.state.turnCount - (this.state.lastSteerTurn ?? 0);
 
     // Check stagnation: no progress after 3+ turns since last steer
-    const stagnating = this.state.lastSteerTurn !== undefined && this.state.lastSteerTurn >= 0 && turnsSinceLastSteer >= 3;
+    const stagnating =
+      this.state.lastSteerTurn !== undefined &&
+      this.state.lastSteerTurn >= 0 &&
+      turnsSinceLastSteer >= 3;
 
     const recent = this.state.interventions.slice(-3);
     if (recent.length < 2) {
@@ -133,7 +145,7 @@ export class SupervisorStateManager {
     }
 
     // Simple similarity: check if messages share common keywords or have similar length
-    const messages = recent.map(iv => iv.message.toLowerCase());
+    const messages = recent.map((iv) => iv.message.toLowerCase());
     let similarCount = 1;
 
     for (let i = 1; i < messages.length; i++) {
@@ -158,12 +170,22 @@ export class SupervisorStateManager {
     if (normA === normB) return true;
 
     // Check for common directive keywords
-    const directiveWords = ['focus', 'implement', 'add', 'fix', 'create', 'build', 'need', 'should', 'must'];
-    const aDirectives = directiveWords.filter(w => normA.includes(w));
-    const bDirectives = directiveWords.filter(w => normB.includes(w));
+    const directiveWords = [
+      'focus',
+      'implement',
+      'add',
+      'fix',
+      'create',
+      'build',
+      'need',
+      'should',
+      'must',
+    ];
+    const aDirectives = directiveWords.filter((w) => normA.includes(w));
+    const bDirectives = directiveWords.filter((w) => normB.includes(w));
 
     // If they share 2+ directive words, likely similar
-    const commonDirectives = aDirectives.filter(w => bDirectives.includes(w));
+    const commonDirectives = aDirectives.filter((w) => bDirectives.includes(w));
     if (commonDirectives.length >= 2) return true;
 
     // Length similarity (within 30%)
@@ -178,7 +200,7 @@ export class SupervisorStateManager {
     const entries = ctx.sessionManager.getBranch();
     for (let i = entries.length - 1; i >= 0; i--) {
       const entry = entries[i];
-      if (entry.type === "custom" && (entry as any).customType === ENTRY_TYPE) {
+      if (entry.type === 'custom' && (entry as any).customType === ENTRY_TYPE) {
         const loaded = (entry as any).data as SupervisorState;
         // Restore ephemeral fields
         this.state = {

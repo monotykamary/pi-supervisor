@@ -42,12 +42,12 @@ pi -e ~/projects/pi-supervisor/src/index.ts
 
 ## Commands
 
-| Command | Description |
-|---|---|
-| `/supervise` | Auto-infer goal from conversation, or open settings panel |
-| `/supervise <outcome>` | Start supervising with explicit goal |
-| `/supervise stop` | Stop active supervision |
-| `/supervise widget` | Toggle the status widget on/off |
+| Command                | Description                                               |
+| ---------------------- | --------------------------------------------------------- |
+| `/supervise`           | Auto-infer goal from conversation, or open settings panel |
+| `/supervise <outcome>` | Start supervising with explicit goal                      |
+| `/supervise stop`      | Stop active supervision                                   |
+| `/supervise widget`    | Toggle the status widget on/off                           |
 
 ### Examples
 
@@ -75,17 +75,20 @@ Navigate with arrow keys, Escape to close. Changes are applied on close.
 ### Live Widget
 
 **Footer** (always visible while supervising):
+
 ```
 🎯
 ```
 
 **Widget** (one line, updated live):
+
 ```
 ◉ Supervising · Goal: "Refactor auth module…" · claude-haiku · ↗ 2 · ⟳ turn 4
   The agent has added the DI container but hasn't updated the existing call sites yet…
 ```
 
 When the supervisor detects an ineffective pattern, the reframe tier appears (e.g., `↻2`):
+
 ```
 ◉ Supervising · Goal: "Implement payment flow…" · claude-haiku · ↗ 5 · ↻2 · ⟳ turn 12
   Breaking into smaller milestone: get the checkout form rendering first…
@@ -97,12 +100,12 @@ The second line shows the supervisor's reasoning as it streams. Toggle the widge
 
 **Analysis triggers:**
 
-| When | Why |
-|---|---|
+| When                          | Why                                              |
+| ----------------------------- | ------------------------------------------------ |
 | Agent goes idle (`agent_end`) | Critical decision point — must choose done/steer |
-| After we steered | Verify the steer worked |
-| Every 8th turn | Safety valve to catch runaway drift |
-| Tool errors detected | If agent hits an error, we check |
+| After we steered              | Verify the steer worked                          |
+| Every 8th turn                | Safety valve to catch runaway drift              |
+| Tool errors detected          | If agent hits an error, we check                 |
 
 The supervisor only intervenes when it has high confidence the agent is off track. It trusts the agent to make progress and only steps in when necessary.
 
@@ -110,15 +113,16 @@ The supervisor only intervenes when it has high confidence the agent is off trac
 
 When the supervisor detects that steering isn't working, it escalates through **4 tiers** of reframing strategies rather than giving up:
 
-| Tier | Trigger | Strategy |
-|---|---|---|
-| 0 | (default) | Standard steering |
-| 1 | Similar messages detected | **Directive** — be extremely specific about the next single action |
-| 2 | Pattern continues | **Subgoal** — break the goal into a smaller, verifiable milestone |
-| 3 | Still stuck | **Pivot** — suggest a completely different strategy or implementation path |
-| 4 | Persistent stall | **Minimal slice** — strip to absolute essentials, demand tangible output |
+| Tier | Trigger                   | Strategy                                                                   |
+| ---- | ------------------------- | -------------------------------------------------------------------------- |
+| 0    | (default)                 | Standard steering                                                          |
+| 1    | Similar messages detected | **Directive** — be extremely specific about the next single action         |
+| 2    | Pattern continues         | **Subgoal** — break the goal into a smaller, verifiable milestone          |
+| 3    | Still stuck               | **Pivot** — suggest a completely different strategy or implementation path |
+| 4    | Persistent stall          | **Minimal slice** — strip to absolute essentials, demand tangible output   |
 
 **Pattern detection:** The supervisor tracks two indicators of ineffectiveness:
+
 - **Message similarity** — when 2+ recent steering messages are similar (suggesting the agent isn't responding)
 - **Stagnation** — when 3+ turns pass without progress after a steer
 
@@ -129,6 +133,7 @@ When either pattern is detected, the supervisor escalates the reframe tier and i
 The supervisor runs on a **separate model** — it can be a cheaper/faster model than the one doing the actual work.
 
 **Resolution order:**
+
 1. Previous session state (persists within a session)
 2. `.pi/supervisor-config.json` in the project root (saved via settings panel)
 3. Active chat model (`ctx.model`) — so it works out of the box with no configuration
@@ -144,15 +149,15 @@ Unlike earlier versions, there are **no artificial limits** on steering attempts
 
 ## Customizing the Supervisor: SUPERVISOR.md
 
-The supervisor's reasoning is controlled by its **system prompt** — not the goal. The goal is always set at runtime via `/supervise`. `SUPERVISOR.md` defines *how* the supervisor thinks: its rules, persona, and project-specific constraints.
+The supervisor's reasoning is controlled by its **system prompt** — not the goal. The goal is always set at runtime via `/supervise`. `SUPERVISOR.md` defines _how_ the supervisor thinks: its rules, persona, and project-specific constraints.
 
 **Discovery order** (mirrors pi's `SYSTEM.md` convention):
 
-| Priority | Location | Use for |
-|---|---|---|
-| 1 | `.pi/SUPERVISOR.md` | Project-specific rules |
-| 2 | `~/.pi/agent/SUPERVISOR.md` | Global personal rules |
-| 3 | Built-in template | Fallback |
+| Priority | Location                    | Use for                |
+| -------- | --------------------------- | ---------------------- |
+| 1        | `.pi/SUPERVISOR.md`         | Project-specific rules |
+| 2        | `~/.pi/agent/SUPERVISOR.md` | Global personal rules  |
+| 3        | Built-in template           | Fallback               |
 
 The active source is shown when you run `/supervise` or `/supervise status`.
 
@@ -215,6 +220,7 @@ You must preserve the JSON response schema. Everything else is up to you.
 You are a supervisor for a TypeScript project. Your priorities: type safety and test coverage.
 
 Rules:
+
 - Steer if the agent uses `any` types or skips tests for new code
 - When steering, be direct: one sentence max, reference the specific file/function if possible
 - "done" only when the new code has types and tests — not before
@@ -222,10 +228,10 @@ Rules:
 
 Response schema (strict JSON, required):
 {
-  "action": "continue" | "steer" | "done",
-  "message": "...",
-  "reasoning": "...",
-  "confidence": 0.85
+"action": "continue" | "steer" | "done",
+"message": "...",
+"reasoning": "...",
+"confidence": 0.85
 }
 ```
 

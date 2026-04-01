@@ -10,18 +10,18 @@
  *   3. Built-in template         — fallback
  */
 
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
-import { homedir } from "node:os";
-import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
-import type { ConversationMessage, SteeringDecision, SupervisorState } from "./types.js";
-import { callSupervisorModel } from "./model-client.js";
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { homedir } from 'node:os';
+import type { ExtensionContext } from '@mariozechner/pi-coding-agent';
+import type { ConversationMessage, SteeringDecision, SupervisorState } from './types.js';
+import { callSupervisorModel } from './model-client.js';
 
 // ---- System prompt loading ----
 
-const SUPERVISOR_MD = "SUPERVISOR.md";
-const CONFIG_DIR = ".pi";
-const GLOBAL_AGENT_DIR = join(homedir(), ".pi", "agent");
+const SUPERVISOR_MD = 'SUPERVISOR.md';
+const CONFIG_DIR = '.pi';
+const GLOBAL_AGENT_DIR = join(homedir(), '.pi', 'agent');
 
 /** Built-in fallback system prompt. */
 const BUILTIN_SYSTEM_PROMPT = `You are a supervisor monitoring a coding AI assistant conversation.
@@ -76,39 +76,37 @@ Response schema (strict JSON):
 export function loadSystemPrompt(cwd: string): { prompt: string; source: string } {
   const projectPath = join(cwd, CONFIG_DIR, SUPERVISOR_MD);
   if (existsSync(projectPath)) {
-    return { prompt: readFileSync(projectPath, "utf-8").trim(), source: projectPath };
+    return { prompt: readFileSync(projectPath, 'utf-8').trim(), source: projectPath };
   }
 
   const globalPath = join(GLOBAL_AGENT_DIR, SUPERVISOR_MD);
   if (existsSync(globalPath)) {
-    return { prompt: readFileSync(globalPath, "utf-8").trim(), source: globalPath };
+    return { prompt: readFileSync(globalPath, 'utf-8').trim(), source: globalPath };
   }
 
-  return { prompt: BUILTIN_SYSTEM_PROMPT, source: "built-in" };
+  return { prompt: BUILTIN_SYSTEM_PROMPT, source: 'built-in' };
 }
 
 // SNAPSHOT_LIMIT is defined below
 
 /** Extract text content from message. */
 function extractText(content: unknown): string {
-  if (typeof content === "string") return content;
+  if (typeof content === 'string') return content;
   if (Array.isArray(content)) {
     return content
-      .filter((b: any) => b.type === "text")
+      .filter((b: any) => b.type === 'text')
       .map((b: any) => b.text as string)
-      .join("\n")
+      .join('\n')
       .trim();
   }
-  return "";
+  return '';
 }
 
 /** Extract text from assistant message content. */
 function extractAssistantText(content: unknown): string {
-  if (!Array.isArray(content)) return "";
-  const textParts = content
-    .filter((b: any) => b.type === "text")
-    .map((b: any) => b.text as string);
-  return textParts.join("\n").trim();
+  if (!Array.isArray(content)) return '';
+  const textParts = content.filter((b: any) => b.type === 'text').map((b: any) => b.text as string);
+  return textParts.join('\n').trim();
 }
 
 /**
@@ -139,19 +137,19 @@ export function buildIncrementalSnapshot(
 
   // Find entries since last analysis
   for (const entry of entries) {
-    if (entry.type !== "message") continue;
+    if (entry.type !== 'message') continue;
     const msg = (entry as any).message;
     if (!msg) continue;
 
     // Track entry position roughly (not exact turn mapping, but sufficient)
     entryIndex++;
 
-    if (msg.role === "user") {
+    if (msg.role === 'user') {
       const content = extractText(msg.content);
-      if (content) newMessages.push({ role: "user", content });
-    } else if (msg.role === "assistant") {
+      if (content) newMessages.push({ role: 'user', content });
+    } else if (msg.role === 'assistant') {
       const content = extractAssistantText(msg.content);
-      if (content) newMessages.push({ role: "assistant", content });
+      if (content) newMessages.push({ role: 'assistant', content });
     }
   }
 
@@ -179,11 +177,14 @@ export function updateSnapshot(
 }
 
 /** Get reframe guidance based on current tier */
-export function getReframeGuidance(tier: number, ineffectivePattern?: { detected: boolean; similarCount: number; turnsSinceLastSteer: number }): string {
-  if (!ineffectivePattern?.detected && tier === 0) return "";
+export function getReframeGuidance(
+  tier: number,
+  ineffectivePattern?: { detected: boolean; similarCount: number; turnsSinceLastSteer: number }
+): string {
+  if (!ineffectivePattern?.detected && tier === 0) return '';
 
   const tierGuidance: Record<number, string> = {
-    0: "",
+    0: '',
     1: `🔄 REFRAME TIER 1 — DIRECTIVE: The agent needs clearer direction. Be extremely specific about the next single action to take.`,
     2: `🔄 REFRAME TIER 2 — SUBGOAL: The agent is stuck on the full goal. Break this into a smaller, verifiable milestone. Tell it to complete just that one piece.`,
     3: `🔄 REFRAME TIER 3 — PIVOT: The current approach isn't working. Suggest a completely different strategy or implementation path. Challenge any assumptions.`,
@@ -192,7 +193,7 @@ export function getReframeGuidance(tier: number, ineffectivePattern?: { detected
 
   const patternNote = ineffectivePattern?.detected
     ? `\n⚠ INEFFECTIVE PATTERN DETECTED: Last ${ineffectivePattern.similarCount} steering messages were similar or no progress in ${ineffectivePattern.turnsSinceLastSteer} turns. Escalate your approach.`
-    : "";
+    : '';
 
   return tierGuidance[tier] + patternNote;
 }
@@ -206,18 +207,18 @@ export function buildUserPrompt(
 ): string {
   const interventionHistory =
     state.interventions.length === 0
-      ? "None yet."
+      ? 'None yet.'
       : state.interventions
           .slice(-5)
           .map((iv, i) => `[${i + 1}] Turn ${iv.turnCount}: "${iv.message}"`)
-          .join("\n");
+          .join('\n');
 
   const conversationText =
     snapshot.length === 0
-      ? "(No conversation yet)"
+      ? '(No conversation yet)'
       : snapshot
-          .map((m) => `${m.role === "user" ? "USER" : "ASSISTANT"}: ${m.content}`)
-          .join("\n\n---\n\n");
+          .map((m) => `${m.role === 'user' ? 'USER' : 'ASSISTANT'}: ${m.content}`)
+          .join('\n\n---\n\n');
 
   const agentStatus = agentIsIdle
     ? `AGENT STATUS: IDLE — the agent has finished its turn and is now waiting for user input.
@@ -225,7 +226,7 @@ You MUST return "done" or "steer". Returning "continue" here means the agent sta
     : `AGENT STATUS: WORKING — the agent is actively processing. Only intervene if clearly off track.`;
 
   const reframeGuidance = getReframeGuidance(state.reframeTier ?? 0, ineffectivePattern);
-  const reframeSection = reframeGuidance ? `\n${reframeGuidance}\n` : "";
+  const reframeSection = reframeGuidance ? `\n${reframeGuidance}\n` : '';
 
   return `DESIRED OUTCOME:
 ${state.outcome}
@@ -263,12 +264,25 @@ export async function analyze(
   const userPrompt = buildUserPrompt(state, snapshot, agentIsIdle, ineffectivePattern);
 
   try {
-    return await callSupervisorModel(ctx, state.provider, state.modelId, systemPrompt, userPrompt, signal, onDelta);
+    return await callSupervisorModel(
+      ctx,
+      state.provider,
+      state.modelId,
+      systemPrompt,
+      userPrompt,
+      signal,
+      onDelta
+    );
   } catch {
     // When idle and analysis fails, nudge rather than silently do nothing
     return agentIsIdle
-      ? { action: "steer", message: "Please continue working toward the goal.", reasoning: "Analysis error", confidence: 0 }
-      : { action: "continue", reasoning: "Analysis error", confidence: 0 };
+      ? {
+          action: 'steer',
+          message: 'Please continue working toward the goal.',
+          reasoning: 'Analysis error',
+          confidence: 0,
+        }
+      : { action: 'continue', reasoning: 'Analysis error', confidence: 0 };
   }
 }
 
@@ -306,16 +320,16 @@ export async function inferOutcome(
   const messages: ConversationMessage[] = [];
 
   for (const entry of entries) {
-    if (entry.type !== "message") continue;
+    if (entry.type !== 'message') continue;
     const msg = (entry as any).message;
     if (!msg) continue;
 
-    if (msg.role === "user") {
+    if (msg.role === 'user') {
       const content = extractText(msg.content);
-      if (content) messages.push({ role: "user", content });
-    } else if (msg.role === "assistant") {
+      if (content) messages.push({ role: 'user', content });
+    } else if (msg.role === 'assistant') {
       const content = extractAssistantText(msg.content);
-      if (content) messages.push({ role: "assistant", content });
+      if (content) messages.push({ role: 'assistant', content });
     }
   }
 
@@ -323,8 +337,8 @@ export async function inferOutcome(
   if (snapshot.length === 0) return null;
 
   const conversationText = snapshot
-    .map((m) => `${m.role === "user" ? "USER" : "ASSISTANT"}: ${m.content}`)
-    .join("\n\n---\n\n");
+    .map((m) => `${m.role === 'user' ? 'USER' : 'ASSISTANT'}: ${m.content}`)
+    .join('\n\n---\n\n');
 
   const userPrompt = `Analyze this conversation and extract the user's primary goal or desired outcome:
 
@@ -334,7 +348,7 @@ What is the specific outcome the user is trying to achieve?`;
 
   try {
     // Import dynamically to avoid circular dependency issues
-    const { callModel } = await import("./model-client.js");
+    const { callModel } = await import('./model-client.js');
     const result = await callModel(
       ctx,
       provider,
@@ -346,8 +360,8 @@ What is the specific outcome the user is trying to achieve?`;
     if (!result) return null;
     // Clean up the result: remove quotes, trim whitespace, limit length
     return result
-      .replace(/^["']|["']$/g, "") // Remove surrounding quotes
-      .replace(/\n/g, " ") // Replace newlines with spaces
+      .replace(/^["']|["']$/g, '') // Remove surrounding quotes
+      .replace(/\n/g, ' ') // Replace newlines with spaces
       .trim()
       .slice(0, 200); // Hard limit at 200 chars
   } catch {

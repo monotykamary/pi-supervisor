@@ -6,8 +6,8 @@
  * there are child 'pi' processes still running.
  */
 
-import { exec } from "node:child_process";
-import { promisify } from "node:util";
+import { exec } from 'node:child_process';
+import { promisify } from 'node:util';
 
 const execAsync = promisify(exec);
 
@@ -24,7 +24,7 @@ export interface SubagentStatus {
 export async function checkChildPiProcesses(): Promise<SubagentStatus> {
   const platform = process.platform;
 
-  if (platform === "darwin" || platform === "linux") {
+  if (platform === 'darwin' || platform === 'linux') {
     return checkUnixChildProcesses();
   }
 
@@ -38,13 +38,11 @@ async function checkUnixChildProcesses(): Promise<SubagentStatus> {
 
     // Get all pi processes with their parent PID
     // Format: ppid pid command
-    const { stdout } = await execAsync(
-      `ps -eo ppid,pid,comm | grep -E "\\bpi\\b" || true`
-    );
+    const { stdout } = await execAsync(`ps -eo ppid,pid,comm | grep -E "\\bpi\\b" || true`);
 
     const pids: number[] = [];
 
-    for (const line of stdout.trim().split("\n")) {
+    for (const line of stdout.trim().split('\n')) {
       const parts = line.trim().split(/\s+/);
       if (parts.length < 3) continue;
 
@@ -54,7 +52,7 @@ async function checkUnixChildProcesses(): Promise<SubagentStatus> {
 
       // Check if this pi process is our direct child
       // Also check for grandchildren (subagents spawning subagents)
-      if (childPpid === ppid && comm === "pi") {
+      if (childPpid === ppid && comm === 'pi') {
         pids.push(childPid);
       }
     }

@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file. See [standa
 ## [0.5.0] - 2026-03-12
 
 ### Changed (Breaking)
+
 - **Simplified supervision — removed `sensitivity`** — the supervisor now automatically decides when to analyze:
   - Always at `agent_end` (agent idle) — the critical decision point
   - Mid-run only after steering (to verify it worked) or every 8th turn (safety valve)
@@ -19,6 +20,7 @@ All notable changes to this project will be documented in this file. See [standa
 - **Removed `sensitivity` parameter from `start_supervision` tool** — supervision is now fully automatic
 
 ### Added
+
 - **Test suite** — Vitest-based testing with 44 tests covering:
   - `SupervisorStateManager` lifecycle, interventions, and trigger logic
   - `parseDecision` JSON parsing with various edge cases
@@ -26,11 +28,13 @@ All notable changes to this project will be documented in this file. See [standa
   - `loadSystemPrompt` discovery order
 
 ### Removed
+
 - `/supervise sensitivity` subcommand — no longer needed
 - Sensitivity selection from settings panel
 - `Sensitivity` type and all sensitivity-related state
 
 ### Technical
+
 - `SupervisorSession` class for reusable model sessions
 - Incremental `snapshotBuffer` in `SupervisorState` for efficient context building
 - `shouldAnalyzeMidRun()` method for smart trigger decisions
@@ -39,6 +43,7 @@ All notable changes to this project will be documented in this file. See [standa
 ## [0.4.2] - 2026-03-11
 
 ### Added
+
 - **Interactive settings panel** — `/supervise` (no args) and `/supervise settings` now open a navigable settings UI built on pi-tui's `SettingsList` component instead of printing static text
   - Arrow keys to navigate, Enter/Space to cycle values or open submenus, Escape to close
   - **Model**: Enter opens the full interactive model picker as a submenu
@@ -51,11 +56,13 @@ All notable changes to this project will be documented in this file. See [standa
 ## [0.4.1] - 2026-02-22
 
 ### Changed
+
 - Updated `@mariozechner/pi-ai`, `@mariozechner/pi-coding-agent`, and `@mariozechner/pi-tui` to 0.54.1
 
 ## [0.4.0] - 2026-02-22
 
 ### Added
+
 - **`start_supervision` tool** — the agent can initiate supervision itself; once active it is locked and only the user can change or stop it via `/supervise`
 - **`/supervise widget`** subcommand — toggle the status widget on/off
 - **Workspace model persistence** — supervisor model saved to `.pi/supervisor-config.json` when `.pi/` exists; loaded automatically on next session
@@ -65,7 +72,8 @@ All notable changes to this project will be documented in this file. See [standa
 - **Shortcut detection** — supervisor always steers when the agent takes shortcuts to satisfy the goal without properly achieving it
 
 ### Changed
-- **Sensitivity reworked** — levels now control both *when* to check and *how confidently* to steer:
+
+- **Sensitivity reworked** — levels now control both _when_ to check and _how confidently_ to steer:
   - `low`: end-of-run only, no mid-run checks
   - `medium`: end-of-run + every 3rd tool cycle (confidence ≥ 0.90)
   - `high`: end-of-run + every tool cycle (confidence ≥ 0.85)
@@ -77,6 +85,7 @@ All notable changes to this project will be documented in this file. See [standa
 - Desired outcome repeated at the bottom of every supervisor analysis prompt to keep it prominent in long conversations
 
 ### Fixed
+
 - Steering loop was broken: `deliverAs: "followUp"` does not trigger a new turn when the agent is already idle; removed to use plain `sendUserMessage`
 
 ## [0.3.0] - 2026-02-21
@@ -84,6 +93,7 @@ All notable changes to this project will be documented in this file. See [standa
 Initial release of `pi-supervisor`.
 
 ### Added
+
 - **Supervisor engine** — observes every agent turn and calls a configurable LLM to evaluate progress toward a user-defined outcome
 - **`/supervise <outcome>`** — activate supervision with a natural-language goal
 - **`/supervise stop`** — deactivate supervision

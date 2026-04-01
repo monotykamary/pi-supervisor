@@ -14,19 +14,16 @@
  *   /supervise widget       — toggle the status widget on/off
  */
 
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
-import { SupervisorStateManager, DEFAULT_PROVIDER, DEFAULT_MODEL_ID } from "./state.js";
-import { analyze, inferOutcome, loadSystemPrompt } from "./engine.js";
-import { updateUI, toggleWidget, isWidgetVisible, type WidgetAction } from "./ui/status-widget.js";
-import { pickModel } from "./ui/model-picker.js";
-import { openSettings } from "./ui/settings-panel.js";
-import {
-  loadGlobalModel,
-  saveGlobalModel,
-} from "./global-config.js";
-import { disposeSession } from "./model-client.js";
-import { Type } from "@sinclair/typebox";
-import { checkChildPiProcesses, waitForSubagents } from "./subagent-detector.js";
+import type { ExtensionAPI, ExtensionContext } from '@mariozechner/pi-coding-agent';
+import { SupervisorStateManager, DEFAULT_PROVIDER, DEFAULT_MODEL_ID } from './state.js';
+import { analyze, inferOutcome, loadSystemPrompt } from './engine.js';
+import { updateUI, toggleWidget, isWidgetVisible, type WidgetAction } from './ui/status-widget.js';
+import { pickModel } from './ui/model-picker.js';
+import { openSettings } from './ui/settings-panel.js';
+import { loadGlobalModel, saveGlobalModel } from './global-config.js';
+import { disposeSession } from './model-client.js';
+import { Type } from '@sinclair/typebox';
+import { checkChildPiProcesses, waitForSubagents } from './subagent-detector.js';
 
 /**
  * Extract partial reasoning text from the supervisor's streaming JSON response.
@@ -35,31 +32,34 @@ import { checkChildPiProcesses, waitForSubagents } from "./subagent-detector.js"
 export function extractThinking(accumulated: string): string {
   // Find the "reasoning" key and capture content after the opening quote
   const keyIdx = accumulated.indexOf('"reasoning"');
-  if (keyIdx === -1) return "";
+  if (keyIdx === -1) return '';
   const after = accumulated.slice(keyIdx + '"reasoning"'.length);
   const openMatch = after.match(/^\s*:\s*"/);
-  if (!openMatch) return "";
+  if (!openMatch) return '';
   const content = after.slice(openMatch[0].length);
   // If the closing quote has arrived, take only what's inside; otherwise take all (streaming)
   const closeIdx = content.search(/(?<!\\)"/);
   const raw = closeIdx === -1 ? content : content.slice(0, closeIdx);
-  return raw.replace(/\\n/g, " ").replace(/\\"/g, '"').trim();
+  return raw.replace(/\\n/g, ' ').replace(/\\"/g, '"').trim();
 }
-
-
 
 /** Check if the session has any user messages in its history. */
 function hasUserMessages(ctx: ExtensionContext): boolean {
   const entries = ctx.sessionManager.getBranch();
   for (const entry of entries) {
-    if (entry.type === "message") {
+    if (entry.type === 'message') {
       const msg = (entry as any).message;
-      if (msg?.role === "user") {
-        const content = typeof msg.content === "string"
-          ? msg.content
-          : Array.isArray(msg.content)
-            ? msg.content.filter((b: any) => b.type === "text").map((b: any) => b.text).join("\n").trim()
-            : "";
+      if (msg?.role === 'user') {
+        const content =
+          typeof msg.content === 'string'
+            ? msg.content
+            : Array.isArray(msg.content)
+              ? msg.content
+                  .filter((b: any) => b.type === 'text')
+                  .map((b: any) => b.text)
+                  .join('\n')
+                  .trim()
+              : '';
         if (content && content.length > 0) return true;
       }
     }
@@ -80,14 +80,14 @@ export default function (pi: ExtensionAPI) {
     updateUI(ctx, state.getState());
   };
 
-  pi.on("session_start", async (_event, ctx) => onSessionLoad(ctx));
-  pi.on("session_switch", async (_event, ctx) => onSessionLoad(ctx));
-  pi.on("session_fork", async (_event, ctx) => onSessionLoad(ctx));
-  pi.on("session_tree", async (_event, ctx) => onSessionLoad(ctx));
+  pi.on('session_start', async (_event, ctx) => onSessionLoad(ctx));
+  pi.on('session_switch', async (_event, ctx) => onSessionLoad(ctx));
+  pi.on('session_fork', async (_event, ctx) => onSessionLoad(ctx));
+  pi.on('session_tree', async (_event, ctx) => onSessionLoad(ctx));
 
   // ---- Keep ctx fresh ----
 
-  pi.on("turn_start", async (_event, ctx) => {
+  pi.on('turn_start', async (_event, ctx) => {
     currentCtx = ctx;
   });
 
@@ -97,7 +97,7 @@ export default function (pi: ExtensionAPI) {
   // 1. We just steered (to verify it worked) - immediate next turn
   // 2. Safety valve every 8th turn (to catch runaway drift)
 
-  pi.on("turn_end", async (event, ctx) => {
+  pi.on('turn_end', async (event, ctx) => {
     currentCtx = ctx;
     if (!state.isActive()) return;
 
@@ -115,15 +115,15 @@ export default function (pi: ExtensionAPI) {
     }
 
     // Mid-run threshold: only intervene if clearly off track
-    if (decision.action === "steer" && decision.message && decision.confidence >= 0.85) {
+    if (decision.action === 'steer' && decision.message && decision.confidence >= 0.85) {
       state.addIntervention({
         turnCount: state.getState()!.turnCount,
         message: decision.message,
         reasoning: decision.reasoning,
         timestamp: Date.now(),
       });
-      updateUI(ctx, state.getState(), { type: "steering", message: decision.message });
-      pi.sendUserMessage(decision.message, { deliverAs: "steer" });
+      updateUI(ctx, state.getState(), { type: 'steering', message: decision.message });
+      pi.sendUserMessage(decision.message, { deliverAs: 'steer' });
     }
   });
 
@@ -131,7 +131,7 @@ export default function (pi: ExtensionAPI) {
   // agent_end fires once per user prompt, always with the agent idle and waiting for input.
   // This is the critical checkpoint where we decide done/steer/continue.
 
-  pi.on("agent_end", async (_event, ctx) => {
+  pi.on('agent_end', async (_event, ctx) => {
     currentCtx = ctx;
     if (!state.isActive()) return;
 
@@ -142,10 +142,10 @@ export default function (pi: ExtensionAPI) {
     const subagentStatus = await checkChildPiProcesses();
     if (subagentStatus.hasActiveSubagents) {
       updateUI(ctx, s, {
-        type: "waiting",
+        type: 'waiting',
         message: `Waiting for ${subagentStatus.count} subagent(s)...`,
         turn: s.turnCount,
-        reframeTier: state.getReframeTier()
+        reframeTier: state.getReframeTier(),
       });
 
       // Poll until subagents complete (or timeout)
@@ -154,11 +154,18 @@ export default function (pi: ExtensionAPI) {
       if (!completed && finalStatus.hasActiveSubagents) {
         // Timeout - subagents still running, but we need to proceed
         // Log this but continue with analysis
-        ctx.ui.notify(`Supervisor: ${finalStatus.count} subagent(s) still running after timeout, proceeding with analysis`, "warning");
+        ctx.ui.notify(
+          `Supervisor: ${finalStatus.count} subagent(s) still running after timeout, proceeding with analysis`,
+          'warning'
+        );
       }
 
       // Subagents done (or timed out), update UI and proceed
-      updateUI(ctx, s, { type: "analyzing", turn: s.turnCount, reframeTier: state.getReframeTier() });
+      updateUI(ctx, s, {
+        type: 'analyzing',
+        turn: s.turnCount,
+        reframeTier: state.getReframeTier(),
+      });
     }
 
     // Check for ineffective steering patterns and escalate reframe tier if needed
@@ -167,14 +174,26 @@ export default function (pi: ExtensionAPI) {
       state.escalateReframeTier();
     }
 
-    updateUI(ctx, s, { type: "analyzing", turn: s.turnCount, reframeTier: state.getReframeTier() });
+    updateUI(ctx, s, { type: 'analyzing', turn: s.turnCount, reframeTier: state.getReframeTier() });
 
-    const decision = await analyze(ctx, s, true /* always idle at agent_end */, ineffectivePattern, undefined, (accumulated) => {
-      const thinking = extractThinking(accumulated);
-      updateUI(ctx, state.getState()!, { type: "analyzing", turn: s.turnCount, reframeTier: state.getReframeTier(), thinking });
-    });
+    const decision = await analyze(
+      ctx,
+      s,
+      true /* always idle at agent_end */,
+      ineffectivePattern,
+      undefined,
+      (accumulated) => {
+        const thinking = extractThinking(accumulated);
+        updateUI(ctx, state.getState()!, {
+          type: 'analyzing',
+          turn: s.turnCount,
+          reframeTier: state.getReframeTier(),
+          thinking,
+        });
+      }
+    );
 
-    if (decision.action === "steer" && decision.message) {
+    if (decision.action === 'steer' && decision.message) {
       idleSteers++;
       state.addIntervention({
         turnCount: s.turnCount,
@@ -182,50 +201,54 @@ export default function (pi: ExtensionAPI) {
         reasoning: decision.reasoning,
         timestamp: Date.now(),
       });
-      updateUI(ctx, state.getState(), { type: "steering", message: decision.message, reframeTier: state.getReframeTier() });
+      updateUI(ctx, state.getState(), {
+        type: 'steering',
+        message: decision.message,
+        reframeTier: state.getReframeTier(),
+      });
       pi.sendUserMessage(decision.message);
-    } else if (decision.action === "done") {
+    } else if (decision.action === 'done') {
       idleSteers = 0;
       state.resetReframeTier();
-      updateUI(ctx, state.getState(), { type: "done" });
-      ctx.ui.notify(`Supervisor: outcome achieved! "${s.outcome}"`, "info");
+      updateUI(ctx, state.getState(), { type: 'done' });
+      ctx.ui.notify(`Supervisor: outcome achieved! "${s.outcome}"`, 'info');
       state.stop();
       disposeSession(); // Clean up reusable session
       updateUI(ctx, state.getState());
     } else {
-      updateUI(ctx, state.getState(), { type: "watching", reframeTier: state.getReframeTier() });
+      updateUI(ctx, state.getState(), { type: 'watching', reframeTier: state.getReframeTier() });
     }
   });
 
   // ---- /supervise command ----
 
-  pi.registerCommand("supervise", {
-    description: "Supervise the chat toward a desired outcome (/supervise or /supervise <outcome>)",
+  pi.registerCommand('supervise', {
+    description: 'Supervise the chat toward a desired outcome (/supervise or /supervise <outcome>)',
     handler: async (args, ctx) => {
       currentCtx = ctx;
-      const trimmed = args?.trim() ?? "";
+      const trimmed = args?.trim() ?? '';
 
       // --- subcommands ---
 
-      if (trimmed === "widget") {
+      if (trimmed === 'widget') {
         const visible = toggleWidget();
         if (state.isActive()) {
           updateUI(ctx, state.getState());
         }
-        ctx.ui.notify(`Supervisor widget ${visible ? "shown" : "hidden"}.`, "info");
+        ctx.ui.notify(`Supervisor widget ${visible ? 'shown' : 'hidden'}.`, 'info');
         return;
       }
 
-      if (trimmed === "stop") {
+      if (trimmed === 'stop') {
         if (!state.isActive()) {
-          ctx.ui.notify("Supervisor is not active.", "warning");
+          ctx.ui.notify('Supervisor is not active.', 'warning');
           return;
         }
         state.stop();
         idleSteers = 0;
         disposeSession();
         updateUI(ctx, state.getState());
-        ctx.ui.notify("Supervisor stopped.", "info");
+        ctx.ui.notify('Supervisor stopped.', 'info');
         return;
       }
 
@@ -235,34 +258,36 @@ export default function (pi: ExtensionAPI) {
         const s = state.getState();
         const globalModel = loadGlobalModel();
         const sessionModel = ctx.model;
-        const defaultProvider = s?.provider ?? globalModel?.provider ?? sessionModel?.provider ?? DEFAULT_PROVIDER;
-        const defaultModelId = s?.modelId ?? globalModel?.modelId ?? sessionModel?.id ?? DEFAULT_MODEL_ID;
+        const defaultProvider =
+          s?.provider ?? globalModel?.provider ?? sessionModel?.provider ?? DEFAULT_PROVIDER;
+        const defaultModelId =
+          s?.modelId ?? globalModel?.modelId ?? sessionModel?.id ?? DEFAULT_MODEL_ID;
 
         // Check if there's conversation history and no active supervision
         const hasConversation = !s?.active && hasUserMessages(ctx);
 
         if (hasConversation) {
           // Offer to infer outcome from conversation
-          const choice = await ctx.ui.select(
-            "Supervision options:",
-            [
-              "Infer goal from conversation",
-              "Open settings panel",
-              "Cancel"
-            ]
-          );
+          const choice = await ctx.ui.select('Supervision options:', [
+            'Infer goal from conversation',
+            'Open settings panel',
+            'Cancel',
+          ]);
 
-          if (choice === "Cancel" || choice === undefined) {
+          if (choice === 'Cancel' || choice === undefined) {
             return;
           }
 
-          if (choice === "Infer goal from conversation") {
-            ctx.ui.setStatus("supervisor", "Inferring goal from conversation...");
+          if (choice === 'Infer goal from conversation') {
+            ctx.ui.setStatus('supervisor', 'Inferring goal from conversation...');
             const inferred = await inferOutcome(ctx, defaultProvider, defaultModelId);
-            ctx.ui.setStatus("supervisor", undefined);
+            ctx.ui.setStatus('supervisor', undefined);
 
             if (!inferred) {
-              ctx.ui.notify("Could not infer goal from conversation. Opening settings panel.", "warning");
+              ctx.ui.notify(
+                'Could not infer goal from conversation. Opening settings panel.',
+                'warning'
+              );
               // Fall through to settings panel
             } else {
               // Start supervision immediately with inferred outcome and global settings
@@ -271,10 +296,11 @@ export default function (pi: ExtensionAPI) {
               updateUI(ctx, state.getState());
 
               const { source } = loadSystemPrompt(ctx.cwd);
-              const promptLabel = source === "built-in" ? "built-in prompt" : source.replace(ctx.cwd, ".");
+              const promptLabel =
+                source === 'built-in' ? 'built-in prompt' : source.replace(ctx.cwd, '.');
               ctx.ui.notify(
-                `Supervisor active: "${inferred.slice(0, 50)}${inferred.length > 50 ? "…" : ""}" | ${defaultProvider}/${defaultModelId} | ${promptLabel}`,
-                "info"
+                `Supervisor active: "${inferred.slice(0, 50)}${inferred.length > 50 ? '…' : ''}" | ${defaultProvider}/${defaultModelId} | ${promptLabel}`,
+                'info'
               );
               return;
             }
@@ -293,8 +319,8 @@ export default function (pi: ExtensionAPI) {
           }
           saveGlobalModel(p, m);
           ctx.ui.notify(
-            `Supervisor model set to ${p}/${m}${state.isActive() ? "" : " (takes effect on next /supervise)"} · saved globally`,
-            "info"
+            `Supervisor model set to ${p}/${m}${state.isActive() ? '' : ' (takes effect on next /supervise)'} · saved globally`,
+            'info'
           );
         }
 
@@ -307,11 +333,11 @@ export default function (pi: ExtensionAPI) {
         }
 
         // Apply stop action
-        if (result.action === "stop" && state.isActive()) {
+        if (result.action === 'stop' && state.isActive()) {
           state.stop();
           idleSteers = 0;
           disposeSession();
-          ctx.ui.notify("Supervisor stopped.", "info");
+          ctx.ui.notify('Supervisor stopped.', 'info');
         }
 
         updateUI(ctx, state.getState());
@@ -322,14 +348,19 @@ export default function (pi: ExtensionAPI) {
       const existing = state.getState();
       const globalModel = loadGlobalModel();
       const sessionModel = ctx.model;
-      let provider = existing?.provider ?? globalModel?.provider ?? sessionModel?.provider ?? DEFAULT_PROVIDER;
-      let modelId  = existing?.modelId  ?? globalModel?.modelId  ?? sessionModel?.id      ?? DEFAULT_MODEL_ID;
+      let provider =
+        existing?.provider ?? globalModel?.provider ?? sessionModel?.provider ?? DEFAULT_PROVIDER;
+      let modelId =
+        existing?.modelId ?? globalModel?.modelId ?? sessionModel?.id ?? DEFAULT_MODEL_ID;
 
       // Only prompt for a model if none has been configured yet
       if (!existing) {
         const apiKey = await ctx.modelRegistry.getApiKeyForProvider(provider);
         if (!apiKey) {
-          ctx.ui.notify(`No API key for "${provider}/${modelId}" — pick a model with an available key.`, "warning");
+          ctx.ui.notify(
+            `No API key for "${provider}/${modelId}" — pick a model with an available key.`,
+            'warning'
+          );
           const picked = await pickModel(ctx, provider, modelId);
           if (!picked) return; // user cancelled
           provider = picked.provider;
@@ -342,10 +373,10 @@ export default function (pi: ExtensionAPI) {
       updateUI(ctx, state.getState());
 
       const { source } = loadSystemPrompt(ctx.cwd);
-      const promptLabel = source === "built-in" ? "built-in prompt" : source.replace(ctx.cwd, ".");
+      const promptLabel = source === 'built-in' ? 'built-in prompt' : source.replace(ctx.cwd, '.');
       ctx.ui.notify(
-        `Supervisor active: "${trimmed.slice(0, 50)}${trimmed.length > 50 ? "…" : ""}" | ${provider}/${modelId} | ${promptLabel}`,
-        "info"
+        `Supervisor active: "${trimmed.slice(0, 50)}${trimmed.length > 50 ? '…' : ''}" | ${provider}/${modelId} | ${promptLabel}`,
+        'info'
       );
     },
   });
@@ -353,34 +384,39 @@ export default function (pi: ExtensionAPI) {
   // ---- Tool: model can initiate supervision but never modify an active session ----
 
   pi.registerTool({
-    name: "start_supervision",
-    label: "Start Supervision",
+    name: 'start_supervision',
+    label: 'Start Supervision',
     description:
-      "Activate the supervisor to track the conversation toward a specific outcome. " +
-      "The supervisor will observe every turn and steer the agent if it drifts. " +
-      "Once supervision is active it is locked — only the user can change or stop it.",
+      'Activate the supervisor to track the conversation toward a specific outcome. ' +
+      'The supervisor will observe every turn and steer the agent if it drifts. ' +
+      'Once supervision is active it is locked — only the user can change or stop it.',
     parameters: Type.Object({
       outcome: Type.String({
         description:
-          "The desired end-state to supervise toward. Be specific and measurable " +
+          'The desired end-state to supervise toward. Be specific and measurable ' +
           "(e.g. 'Implement JWT auth with refresh tokens and full test coverage').",
       }),
-      model: Type.Optional(Type.String({
-        description:
-          "Supervisor model as 'provider/modelId' (e.g. 'anthropic/claude-haiku-4-5-20251001'). " +
-          "Defaults to workspace config, then the active chat model.",
-      })),
+      model: Type.Optional(
+        Type.String({
+          description:
+            "Supervisor model as 'provider/modelId' (e.g. 'anthropic/claude-haiku-4-5-20251001'). " +
+            'Defaults to workspace config, then the active chat model.',
+        })
+      ),
     }),
     execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
-      const text = (msg: string) => ({ content: [{ type: "text" as const, text: msg }], details: undefined });
+      const text = (msg: string) => ({
+        content: [{ type: 'text' as const, text: msg }],
+        details: undefined,
+      });
 
       // Guard: supervision already active — model cannot modify it
       if (state.isActive()) {
         const s = state.getState()!;
         return text(
           `Supervision is already active and cannot be changed by the model.\n` +
-          `Active outcome: "${s.outcome}"\n` +
-          `Only the user can stop or modify supervision via /supervise.`
+            `Active outcome: "${s.outcome}"\n` +
+            `Only the user can stop or modify supervision via /supervise.`
         );
       }
 
@@ -388,14 +424,14 @@ export default function (pi: ExtensionAPI) {
       let provider: string;
       let modelId: string;
       if (params.model) {
-        const slash = params.model.indexOf("/");
+        const slash = params.model.indexOf('/');
         provider = slash === -1 ? DEFAULT_PROVIDER : params.model.slice(0, slash);
-        modelId  = slash === -1 ? params.model     : params.model.slice(slash + 1);
+        modelId = slash === -1 ? params.model : params.model.slice(slash + 1);
       } else {
         const globalModel = loadGlobalModel();
-        const sessionModel   = ctx.model;
+        const sessionModel = ctx.model;
         provider = globalModel?.provider ?? sessionModel?.provider ?? DEFAULT_PROVIDER;
-        modelId  = globalModel?.modelId  ?? sessionModel?.id      ?? DEFAULT_MODEL_ID;
+        modelId = globalModel?.modelId ?? sessionModel?.id ?? DEFAULT_MODEL_ID;
       }
 
       state.start(params.outcome, provider, modelId);
@@ -404,12 +440,12 @@ export default function (pi: ExtensionAPI) {
       updateUI(ctx, state.getState());
 
       const { source } = loadSystemPrompt(ctx.cwd);
-      const promptLabel = source === "built-in" ? "built-in prompt" : ".pi/SUPERVISOR.md";
+      const promptLabel = source === 'built-in' ? 'built-in prompt' : '.pi/SUPERVISOR.md';
 
       // Notify the user so they're aware supervision was initiated by the model
       ctx.ui.notify(
-        `Supervisor started by agent: "${params.outcome.slice(0, 60)}${params.outcome.length > 60 ? "…" : ""}" | ${provider}/${modelId} | ${promptLabel}`,
-        "info"
+        `Supervisor started by agent: "${params.outcome.slice(0, 60)}${params.outcome.length > 60 ? '…' : ''}" | ${provider}/${modelId} | ${promptLabel}`,
+        'info'
       );
 
       return text(`Supervision active. Outcome: "${params.outcome}" | ${provider}/${modelId}`);

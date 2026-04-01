@@ -10,18 +10,18 @@ import {
   createAgentSession,
   DefaultResourceLoader,
   SessionManager,
-} from "@mariozechner/pi-coding-agent";
-import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
-import type { SteeringDecision } from "./types.js";
+} from '@mariozechner/pi-coding-agent';
+import type { ExtensionContext } from '@mariozechner/pi-coding-agent';
+import type { SteeringDecision } from './types.js';
 
 /**
  * Reusable supervisor session for a single goal.
  * Maintains context window across multiple analyses for token efficiency.
  */
 export class SupervisorSession {
-  private session: Awaited<ReturnType<typeof createAgentSession>>["session"] | null = null;
+  private session: Awaited<ReturnType<typeof createAgentSession>>['session'] | null = null;
   private model: any = null;
-  private systemPrompt: string = "";
+  private systemPrompt: string = '';
 
   async ensureStarted(
     ctx: ExtensionContext,
@@ -33,11 +33,7 @@ export class SupervisorSession {
     const newModel = ctx.modelRegistry.find(provider, modelId);
     if (!newModel) return false;
 
-    if (
-      this.session &&
-      this.model === newModel &&
-      this.systemPrompt === systemPrompt
-    ) {
+    if (this.session && this.model === newModel && this.systemPrompt === systemPrompt) {
       // Session reusable
       return true;
     }
@@ -71,18 +67,19 @@ export class SupervisorSession {
     }
   }
 
-  async prompt(userPrompt: string, signal?: AbortSignal, onDelta?: (accumulated: string) => void): Promise<string | null> {
+  async prompt(
+    userPrompt: string,
+    signal?: AbortSignal,
+    onDelta?: (accumulated: string) => void
+  ): Promise<string | null> {
     if (!this.session) return null;
 
     const onAbort = () => this.session?.abort();
-    signal?.addEventListener("abort", onAbort, { once: true });
+    signal?.addEventListener('abort', onAbort, { once: true });
 
-    let responseText = "";
+    let responseText = '';
     const unsubscribe = this.session.subscribe((event) => {
-      if (
-        event.type === "message_update" &&
-        event.assistantMessageEvent.type === "text_delta"
-      ) {
+      if (event.type === 'message_update' && event.assistantMessageEvent.type === 'text_delta') {
         responseText += event.assistantMessageEvent.delta;
         onDelta?.(responseText);
       }
@@ -94,7 +91,7 @@ export class SupervisorSession {
       return null;
     } finally {
       unsubscribe();
-      signal?.removeEventListener("abort", onAbort);
+      signal?.removeEventListener('abort', onAbort);
     }
 
     return responseText;
@@ -150,7 +147,7 @@ export async function callModel(
   });
   await loader.reload();
 
-  let session: Awaited<ReturnType<typeof createAgentSession>>["session"];
+  let session: Awaited<ReturnType<typeof createAgentSession>>['session'];
   try {
     const result = await createAgentSession({
       sessionManager: SessionManager.inMemory(),
@@ -165,14 +162,11 @@ export async function callModel(
   }
 
   const onAbort = () => session.abort();
-  signal?.addEventListener("abort", onAbort, { once: true });
+  signal?.addEventListener('abort', onAbort, { once: true });
 
-  let responseText = "";
+  let responseText = '';
   const unsubscribe = session.subscribe((event) => {
-    if (
-      event.type === "message_update" &&
-      event.assistantMessageEvent.type === "text_delta"
-    ) {
+    if (event.type === 'message_update' && event.assistantMessageEvent.type === 'text_delta') {
       responseText += event.assistantMessageEvent.delta;
       onDelta?.(responseText);
     }
@@ -184,7 +178,7 @@ export async function callModel(
     return null;
   } finally {
     unsubscribe();
-    signal?.removeEventListener("abort", onAbort);
+    signal?.removeEventListener('abort', onAbort);
     session.dispose();
   }
 
@@ -206,10 +200,10 @@ export async function callSupervisorModel(
 ): Promise<SteeringDecision> {
   const session = getOrCreateSession();
   const started = await session.ensureStarted(ctx, provider, modelId, systemPrompt);
-  if (!started) return safeContinue("Failed to start supervisor session");
+  if (!started) return safeContinue('Failed to start supervisor session');
 
   const text = await session.prompt(userPrompt, signal, onDelta);
-  if (text === null) return safeContinue("Model call failed");
+  if (text === null) return safeContinue('Model call failed');
   return parseDecision(text);
 }
 
@@ -222,20 +216,20 @@ export function parseDecision(text: string): SteeringDecision {
   try {
     const parsed = JSON.parse(jsonStr) as Partial<SteeringDecision>;
     const action = parsed.action;
-    if (action !== "continue" && action !== "steer" && action !== "done") {
-      return safeContinue("Invalid action in supervisor response");
+    if (action !== 'continue' && action !== 'steer' && action !== 'done') {
+      return safeContinue('Invalid action in supervisor response');
     }
     return {
       action,
-      message: typeof parsed.message === "string" ? parsed.message.trim() : undefined,
-      reasoning: typeof parsed.reasoning === "string" ? parsed.reasoning : "",
-      confidence: typeof parsed.confidence === "number" ? parsed.confidence : 0.5,
+      message: typeof parsed.message === 'string' ? parsed.message.trim() : undefined,
+      reasoning: typeof parsed.reasoning === 'string' ? parsed.reasoning : '',
+      confidence: typeof parsed.confidence === 'number' ? parsed.confidence : 0.5,
     };
   } catch {
-    return safeContinue("Failed to parse supervisor JSON decision");
+    return safeContinue('Failed to parse supervisor JSON decision');
   }
 }
 
 function safeContinue(reason: string): SteeringDecision {
-  return { action: "continue", reasoning: reason, confidence: 0 };
+  return { action: 'continue', reasoning: reason, confidence: 0 };
 }
