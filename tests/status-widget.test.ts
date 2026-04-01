@@ -139,6 +139,142 @@ describe('status-widget', () => {
       expect(allText).not.toContain('First analysis thinking');
     });
 
+    it('immediately clears thinking when leaving analyzing for steering (no animation delay)', () => {
+      const ctx = createMockCtx();
+      const state = createMockState();
+
+      // Step 1: Start with analyzing and thinking content
+      updateUI(ctx, state, {
+        type: 'analyzing',
+        turn: 1,
+        thinking: 'Analysis thinking that should disappear immediately on steer',
+      });
+
+      // Step 2: Transition to steering - thinking should clear immediately, not animate
+      updateUI(ctx, state, {
+        type: 'steering',
+        message: 'Please fix this issue',
+        reframeTier: 0,
+      });
+
+      // Get the widget state after steering
+      const lastCall = ctx.ui.setWidget.mock.calls[ctx.ui.setWidget.mock.calls.length - 1];
+      const widgetFactory = lastCall[1];
+      const mockTheme = {
+        fg: (color: string, text: string) => text,
+      };
+      const widget = widgetFactory(null, mockTheme);
+      const lines = widget.render(100);
+
+      // The thinking content should be immediately gone - only header line should remain
+      expect(lines.length).toBe(1); // Just the header line, no thinking lines
+      const allText = lines.join(' ');
+      expect(allText).toContain('steering');
+      expect(allText).not.toContain('Analysis thinking');
+    });
+
+    it('does not accumulate stale thinking through multiple rapid steers', () => {
+      const ctx = createMockCtx();
+      const state = createMockState();
+
+      // Simulate rapid steers after analysis (the 5 steers bug scenario)
+      updateUI(ctx, state, {
+        type: 'analyzing',
+        turn: 1,
+        thinking: 'Initial analysis content',
+      });
+
+      // Multiple rapid steers (faster than 15s animation delay)
+      for (let i = 0; i < 5; i++) {
+        updateUI(ctx, state, {
+          type: 'steering',
+          message: `Steer ${i + 1}`,
+          reframeTier: 0,
+        });
+      }
+
+      // Final state should not show any stale thinking
+      const lastCall = ctx.ui.setWidget.mock.calls[ctx.ui.setWidget.mock.calls.length - 1];
+      const widgetFactory = lastCall[1];
+      const mockTheme = {
+        fg: (color: string, text: string) => text,
+      };
+      const widget = widgetFactory(null, mockTheme);
+      const lines = widget.render(100);
+
+      // Should only have header line, no accumulated thinking lines
+      expect(lines.length).toBe(1);
+      const allText = lines.join(' ');
+      expect(allText).not.toContain('Initial analysis');
+      expect(allText).toContain('steering');
+    });
+
+    it('immediately clears thinking when leaving analyzing for done state', () => {
+      const ctx = createMockCtx();
+      const state = createMockState();
+
+      // Start with analyzing
+      updateUI(ctx, state, {
+        type: 'analyzing',
+        turn: 1,
+        thinking: 'Analysis that should clear on done',
+      });
+
+      // Transition to done - thinking should clear immediately
+      updateUI(ctx, state, { type: 'done' });
+
+      const lastCall = ctx.ui.setWidget.mock.calls[ctx.ui.setWidget.mock.calls.length - 1];
+      const widgetFactory = lastCall[1];
+      const mockTheme = {
+        fg: (color: string, text: string) => text,
+      };
+      const widget = widgetFactory(null, mockTheme);
+      const lines = widget.render(100);
+
+      // Should only have header line
+      expect(lines.length).toBe(1);
+      const allText = lines.join(' ');
+      expect(allText).toContain('done');
+      expect(allText).not.toContain('Analysis that should clear');
+    });
+
+    it('does not flash old thoughts when re-entering analyzing after steering', () => {
+      const ctx = createMockCtx();
+      const state = createMockState();
+
+      // Initial analysis
+      updateUI(ctx, state, {
+        type: 'analyzing',
+        turn: 1,
+        thinking: 'First round of analysis',
+      });
+
+      // Steer
+      updateUI(ctx, state, {
+        type: 'steering',
+        message: 'Fix this',
+      });
+
+      // New analysis - should NOT show old thinking even briefly
+      updateUI(ctx, state, {
+        type: 'analyzing',
+        turn: 2,
+        thinking: 'Fresh second round analysis',
+      });
+
+      const lastCall = ctx.ui.setWidget.mock.calls[ctx.ui.setWidget.mock.calls.length - 1];
+      const widgetFactory = lastCall[1];
+      const mockTheme = {
+        fg: (color: string, text: string) => text,
+      };
+      const widget = widgetFactory(null, mockTheme);
+      const lines = widget.render(100);
+
+      const allText = lines.join(' ');
+      expect(allText).toContain('Fresh second round');
+      expect(allText).not.toContain('First round');
+    });
+
     it('preserves animation state when same thinking content is updated', () => {
       const ctx = createMockCtx();
       const state = createMockState();

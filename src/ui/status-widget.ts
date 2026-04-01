@@ -60,6 +60,9 @@ export function updateUI(
   const hasNewThinking =
     action.type === 'analyzing' && action.thinking && action.thinking !== _lastThinking;
 
+  // When leaving 'analyzing' mode, immediately clear thinking text (don't animate stale thoughts)
+  const leavingAnalyzing = _lastActionType === 'analyzing' && action.type !== 'analyzing';
+
   if (_clearTimer) {
     clearTimeout(_clearTimer);
     _clearTimer = null;
@@ -69,11 +72,14 @@ export function updateUI(
     _animationTimer = null;
   }
 
-  // If we have new thinking, reset the clear animation state immediately
-  // so old thoughts don't flash back
-  if (hasNewThinking) {
+  // If we have new thinking, or we're leaving analyzing mode, reset the clear animation state
+  // immediately so old thoughts don't flash back
+  if (hasNewThinking || leavingAnalyzing) {
     _hiddenFromBottomCount = 0;
     _lastThinkingLines = [];
+    if (leavingAnalyzing) {
+      _lastThinking = '';
+    }
   }
 
   // Always update last state first so animation uses latest intervention count
@@ -101,7 +107,7 @@ export function updateUI(
 
   const shouldAnimate = !state || !state.active || action.type === 'steering';
 
-  if (shouldAnimate && _lastActiveState && _lastThinkingLines.length > 0) {
+  if (shouldAnimate && _lastActiveState && _lastThinkingLines.length > 0 && !leavingAnalyzing) {
     _clearTimer = setTimeout(() => {
       startLineClearAnimation(ctx);
     }, CLEAR_DELAY_MS);
@@ -111,7 +117,13 @@ export function updateUI(
         : { type: 'done', reframeTier: 0 };
     _lastActionType = fallbackAction.type;
     _storedAction = fallbackAction;
-    renderWithState(ctx, _lastActiveState, fallbackAction, _lastThinking, _hiddenFromBottomCount);
+    renderWithState(
+      ctx,
+      _lastActiveState,
+      fallbackAction,
+      leavingAnalyzing ? '' : _lastThinking,
+      _hiddenFromBottomCount
+    );
     return;
   }
 
