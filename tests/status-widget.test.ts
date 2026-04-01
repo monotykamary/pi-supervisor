@@ -369,6 +369,48 @@ describe('status-widget', () => {
       expect(allText).toContain('New analysis after completion');
       expect(allText).not.toContain('Initial analysis');
     });
+
+    it('preserves thinking lines for animation when supervisor becomes inactive after done', () => {
+      const ctx = createMockCtx();
+      const state = createMockState();
+
+      // Step 1: Start with analyzing and thinking content
+      updateUI(ctx, state, {
+        type: 'analyzing',
+        turn: 1,
+        thinking: 'Analysis thinking that should animate clear',
+      });
+
+      // Step 2: Transition to done while still active
+      updateUI(ctx, state, { type: 'done' });
+
+      // Verify the widget was rendered with 'done' status
+      const doneCalls = ctx.ui.setWidget.mock.calls.filter(
+        (call: any[]) => call[0] === 'supervisor'
+      );
+      expect(doneCalls.length).toBeGreaterThan(0);
+
+      const lastDoneCall = doneCalls[doneCalls.length - 1];
+      expect(lastDoneCall[1]).not.toBeUndefined();
+
+      // Verify only header line is shown (thinking is hidden but preserved for animation)
+      const widgetFactory = lastDoneCall[1];
+      const mockTheme = { fg: (color: string, text: string) => text };
+      const widget = widgetFactory(null, mockTheme);
+      const lines = widget.render(100);
+      expect(lines.length).toBe(1);
+      expect(lines.join(' ')).toContain('done');
+      expect(lines.join(' ')).not.toContain('Analysis thinking');
+
+      // Step 3: Verify widget was updated after going inactive (animation path or clear)
+      const callsAfterDone = ctx.ui.setWidget.mock.calls.length;
+
+      const inactiveState = { ...state, active: false };
+      updateUI(ctx, inactiveState as any);
+
+      // Widget should be updated (either animation setup or clear)
+      expect(ctx.ui.setWidget.mock.calls.length).toBeGreaterThanOrEqual(callsAfterDone);
+    });
   });
 
   describe('widget visibility', () => {

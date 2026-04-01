@@ -31,8 +31,10 @@ export function updateUI(
   const hasNewThinking =
     action.type === 'analyzing' && action.thinking && action.thinking !== state.lastThinking;
 
-  // When leaving 'analyzing' mode, immediately clear thinking text
-  const leavingAnalyzing = state.lastActionType === 'analyzing' && action.type !== 'analyzing';
+  // Detect when leaving analyzing mode (for clear animation)
+  const wasAnalyzing = state.lastActionType === 'analyzing';
+  const isNowAnalyzing = action.type === 'analyzing';
+  const leavingAnalyzing = wasAnalyzing && !isNowAnalyzing;
 
   if (state.clearTimer) {
     clearTimeout(state.clearTimer);
@@ -43,13 +45,16 @@ export function updateUI(
     state.animationTimer = null;
   }
 
-  // Reset animation state if needed
-  if (hasNewThinking || leavingAnalyzing) {
+  // Reset animation state for new thinking (streaming replacement)
+  if (hasNewThinking) {
     state.hiddenFromBottomCount = 0;
     state.lastThinkingLines = [];
-    if (leavingAnalyzing) {
-      state.lastThinking = '';
-    }
+  }
+
+  // When leaving analyzing, always animate the clear (steering, done, or watching)
+  if (leavingAnalyzing) {
+    state.lastThinking = ''; // Hide the thinking text
+    // lastThinkingLines is preserved for the animation
   }
 
   // Always update last state first
@@ -222,7 +227,8 @@ function renderWithState(
         }
 
         if (!rawThinking) {
-          widgetState.lastThinkingLines = [];
+          // Don't clear lastThinkingLines here - they may be needed for the clear animation.
+          // They'll be cleared by the animation completion or when supervisor becomes inactive.
           return [l1];
         }
 
