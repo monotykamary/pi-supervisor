@@ -23,6 +23,7 @@ let _animationTimer: ReturnType<typeof setTimeout> | null = null;
 let _lastActiveState: { outcome: string; interventions: SupervisorIntervention[] } | null = null;
 let _lastThinking = '';
 let _lastActionType: WidgetAction['type'] = 'watching';
+let _storedAction: WidgetAction | null = null;
 let _lastThinkingLines: string[] = [];
 let _hiddenFromBottomCount = 0;
 
@@ -63,16 +64,24 @@ export function updateUI(
   }
   _hiddenFromBottomCount = 0;
 
+  // Start animation for done (inactive) or steering (active but intervening)
+  const shouldAnimate = !state || !state.active || action.type === 'steering';
+
+  if (shouldAnimate && _lastActiveState && _lastThinkingLines.length > 0) {
+    _clearTimer = setTimeout(() => {
+      startLineClearAnimation(ctx);
+    }, CLEAR_DELAY_MS);
+    const fallbackAction: WidgetAction =
+      action.type === 'steering'
+        ? { type: 'steering', message: '', reframeTier: action.reframeTier }
+        : { type: 'done', reframeTier: 0 };
+    _lastActionType = fallbackAction.type;
+    _storedAction = fallbackAction;
+    renderWithState(ctx, _lastActiveState, fallbackAction, _lastThinking, _hiddenFromBottomCount);
+    return;
+  }
+
   if (!state || !state.active) {
-    if (_lastActiveState && _lastThinkingLines.length > 0) {
-      _clearTimer = setTimeout(() => {
-        startLineClearAnimation(ctx);
-      }, CLEAR_DELAY_MS);
-      const fallbackAction: WidgetAction = { type: 'done', reframeTier: 0 };
-      _lastActionType = 'done';
-      renderWithState(ctx, _lastActiveState, fallbackAction, _lastThinking, _hiddenFromBottomCount);
-      return;
-    }
     _lastThinkingLines = [];
     ctx.ui.setStatus(STATUS_ID, undefined);
     ctx.ui.setWidget(WIDGET_ID, undefined);
@@ -114,10 +123,13 @@ function startLineClearAnimation(ctx: ExtensionContext): void {
         const firstLine = _lastThinkingLines[0].replace(/^  /, '');
         _lastThinkingLines = ['  ' + truncateToWidth(firstLine, 77) + '...'];
         _hiddenFromBottomCount = 0;
+        // Use stored action to preserve reframe tier
+        const reframeTier =
+          _storedAction?.type === 'steering' ? (_storedAction.reframeTier ?? 0) : 0;
         renderWithState(
           ctx,
           _lastActiveState!,
-          { type: 'steering', message: '', reframeTier: 0 },
+          { type: 'steering', message: '', reframeTier },
           _lastThinkingLines[0],
           0
         );
@@ -127,6 +139,7 @@ function startLineClearAnimation(ctx: ExtensionContext): void {
         _lastThinking = '';
         _lastThinkingLines = [];
         _hiddenFromBottomCount = 0;
+        _storedAction = null;
         ctx.ui.setStatus(STATUS_ID, undefined);
         ctx.ui.setWidget(WIDGET_ID, undefined);
         return;
@@ -134,8 +147,9 @@ function startLineClearAnimation(ctx: ExtensionContext): void {
     }
 
     _hiddenFromBottomCount++;
+    const reframeTier = _storedAction?.type === 'steering' ? (_storedAction.reframeTier ?? 0) : 0;
     const fallbackAction: WidgetAction = isSteering
-      ? { type: 'steering', message: '', reframeTier: 0 }
+      ? { type: 'steering', message: '', reframeTier }
       : { type: 'done', reframeTier: 0 };
     renderWithState(ctx, _lastActiveState!, fallbackAction, '', _hiddenFromBottomCount);
 
