@@ -209,9 +209,10 @@ function renderWithState(
     else if (action.type === 'inferring') headerText = 'Inferring';
     else headerText = 'Supervising';
     const header = `${theme.fg('accent', '◉')} ${theme.fg('accent', headerText)}`;
-    const goalLabel = `${theme.fg('dim', 'Goal:')} `;
-    const goalQuoteOpen = theme.fg('muted', '"');
-    const goalQuoteClose = theme.fg('muted', '"');
+    const hasGoal = snap.outcome.length > 0;
+    const goalLabel = hasGoal ? `${theme.fg('dim', 'Goal:')} ` : '';
+    const goalQuoteOpen = hasGoal ? theme.fg('muted', '"') : '';
+    const goalQuoteClose = hasGoal ? theme.fg('muted', '"') : '';
 
     const steerCount = snap.interventions.length;
     const steers = steerCount > 0 ? theme.fg('dim', `↗ ${steerCount}`) : '';
@@ -227,22 +228,27 @@ function renderWithState(
         const paddedWidth = Math.max(0, width - 1);
         _lastRenderedWidth = paddedWidth;
         const suffix = suffixParts.length > 0 ? sep + suffixParts.join(sep) : '';
-        const prefix = header + sep + goalLabel + goalQuoteOpen;
 
         const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, '');
-        const prefixWidth = stripAnsi(prefix).length;
-        const suffixWidth = stripAnsi(suffix).length;
-        const closeQuoteWidth = stripAnsi(goalQuoteClose).length;
-        const availableForGoal = Math.max(
-          0,
-          paddedWidth - prefixWidth - suffixWidth - closeQuoteWidth
-        );
 
-        const rawGoal = snap.outcome;
-        const truncatedGoal = truncateToWidth(rawGoal, availableForGoal);
-        const goalText = theme.fg('muted', truncatedGoal);
-
-        const line = prefix + goalText + goalQuoteClose + suffix;
+        let line: string;
+        if (hasGoal) {
+          const prefix = header + sep + goalLabel + goalQuoteOpen;
+          const prefixWidth = stripAnsi(prefix).length;
+          const suffixWidth = stripAnsi(suffix).length;
+          const closeQuoteWidth = stripAnsi(goalQuoteClose).length;
+          const availableForGoal = Math.max(
+            0,
+            paddedWidth - prefixWidth - suffixWidth - closeQuoteWidth
+          );
+          const rawGoal = snap.outcome;
+          const truncatedGoal = truncateToWidth(rawGoal, availableForGoal);
+          const goalText = theme.fg('muted', truncatedGoal);
+          line = prefix + goalText + goalQuoteClose + suffix;
+        } else {
+          const parts = [header, ...suffixParts].filter(Boolean);
+          line = parts.join(sep);
+        }
         const l1 = truncateToWidth(line, paddedWidth);
 
         // During animation, hide lines from the bottom
