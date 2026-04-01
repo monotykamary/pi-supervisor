@@ -101,33 +101,62 @@ export function updateUI(
     const reframeStr = reframeTier > 0 ? theme.fg('error', `↻${reframeTier}`) : '';
     const suffixParts = [steers, reframeStr, actionStr].filter(Boolean);
 
-    const thinkingLine = thinking ? theme.fg('dim', `  ${thinking}`) : '';
+    const thinkingPrefix = theme.fg('dim', '  ');
+    const rawThinking = thinking;
 
     return {
       render: (width: number) => {
+        // Add 1 space padding on the right so widget doesn't hug the edge
+        const paddedWidth = Math.max(0, width - 1);
+
         // Build suffix first (we want to preserve these)
         const suffix = suffixParts.length > 0 ? sep + suffixParts.join(sep) : '';
         const prefix = header + sep + goalLabel + goalQuoteOpen;
 
-        // Calculate available space for goal text
+        // Calculate available space for goal text (using padded width)
         // Strip ANSI for accurate width calculation
         const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, '');
         const prefixWidth = stripAnsi(prefix).length;
         const suffixWidth = stripAnsi(suffix).length;
         const closeQuoteWidth = stripAnsi(goalQuoteClose).length;
-        const availableForGoal = Math.max(0, width - prefixWidth - suffixWidth - closeQuoteWidth);
+        const availableForGoal = Math.max(
+          0,
+          paddedWidth - prefixWidth - suffixWidth - closeQuoteWidth
+        );
 
         // Truncate goal to fit available space
         const rawGoal = snap.outcome;
         const truncatedGoal = truncateToWidth(rawGoal, availableForGoal);
         const goalText = theme.fg('muted', truncatedGoal);
 
-        // Assemble final line
+        // Assemble final line (truncated to padded width)
         const line = prefix + goalText + goalQuoteClose + suffix;
-        const l1 = truncateToWidth(line, width);
+        const l1 = truncateToWidth(line, paddedWidth);
 
-        if (!thinkingLine) return [l1];
-        return [l1, truncateToWidth(thinkingLine, width)];
+        if (!rawThinking) return [l1];
+
+        // Wrap thinking text naturally into multiple lines
+        const thinkingIndent = stripAnsi(thinkingPrefix).length;
+        const thinkingLines: string[] = [];
+        const words = rawThinking.split(' ');
+        let currentLine = '';
+
+        for (const word of words) {
+          const testLine = currentLine ? `${currentLine} ${word}` : word;
+          if (stripAnsi(testLine).length <= paddedWidth - thinkingIndent) {
+            currentLine = testLine;
+          } else {
+            if (currentLine) {
+              thinkingLines.push(thinkingPrefix + currentLine);
+            }
+            currentLine = word;
+          }
+        }
+        if (currentLine) {
+          thinkingLines.push(thinkingPrefix + currentLine);
+        }
+
+        return [l1, ...thinkingLines];
       },
       invalidate: () => {},
     };
