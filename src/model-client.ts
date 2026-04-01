@@ -12,7 +12,7 @@ import {
   SessionManager,
 } from '@mariozechner/pi-coding-agent';
 import type { ExtensionContext } from '@mariozechner/pi-coding-agent';
-import type { SteeringDecision } from './types.js';
+import type { SteeringDecision, InterventionASI } from './types.js';
 
 /**
  * Reusable supervisor session for a single goal.
@@ -224,6 +224,7 @@ export function parseDecision(text: string): SteeringDecision {
       message: typeof parsed.message === 'string' ? parsed.message.trim() : undefined,
       reasoning: typeof parsed.reasoning === 'string' ? parsed.reasoning : '',
       confidence: typeof parsed.confidence === 'number' ? parsed.confidence : 0.5,
+      asi: parsed.asi && typeof parsed.asi === 'object' ? parsed.asi : undefined,
     };
   } catch {
     return safeContinue('Failed to parse supervisor JSON decision');

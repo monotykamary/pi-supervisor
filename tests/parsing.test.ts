@@ -137,6 +137,59 @@ describe('parseDecision', () => {
     expect(result.message).toBe('Say "hello"');
     expect(result.reasoning).toBe('The agent said "test"');
   });
+
+  it('parses ASI from steer response', () => {
+    const text = JSON.stringify({
+      action: 'steer',
+      message: 'Focus on tests',
+      reasoning: 'Agent drifting',
+      confidence: 0.9,
+      asi: {
+        why_stuck: 'refactoring without tests',
+        strategy_used: 'directive',
+        pattern_detected: 'test_skipping',
+        confidence_source: 'no test files added',
+        would_escalate_sooner: false,
+        custom_key: 'custom_value',
+      },
+    });
+
+    const result = parseDecision(text);
+    expect(result.asi).toBeDefined();
+    expect(result.asi!.why_stuck).toBe('refactoring without tests');
+    expect(result.asi!.strategy_used).toBe('directive');
+    expect(result.asi!.pattern_detected).toBe('test_skipping');
+    expect(result.asi!.would_escalate_sooner).toBe(false);
+    expect(result.asi!.custom_key).toBe('custom_value');
+  });
+
+  it('handles missing ASI gracefully', () => {
+    const text = JSON.stringify({
+      action: 'steer',
+      message: 'Focus',
+      reasoning: 'Test',
+      confidence: 0.8,
+    });
+
+    const result = parseDecision(text);
+    expect(result.asi).toBeUndefined();
+  });
+
+  it('handles ASI with only partial fields', () => {
+    const text = JSON.stringify({
+      action: 'done',
+      reasoning: 'Complete',
+      confidence: 0.99,
+      asi: {
+        why_stuck: 'already done',
+      },
+    });
+
+    const result = parseDecision(text);
+    expect(result.asi).toBeDefined();
+    expect(result.asi!.why_stuck).toBe('already done');
+    expect(result.asi!.strategy_used).toBeUndefined();
+  });
 });
 
 describe('extractThinking', () => {

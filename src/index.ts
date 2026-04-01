@@ -121,6 +121,7 @@ export default function (pi: ExtensionAPI) {
         message: decision.message,
         reasoning: decision.reasoning,
         timestamp: Date.now(),
+        asi: decision.asi,
       });
       updateUI(ctx, state.getState(), { type: 'steering', message: decision.message });
       pi.sendUserMessage(decision.message, { deliverAs: 'steer' });
@@ -200,6 +201,7 @@ export default function (pi: ExtensionAPI) {
         message: decision.message,
         reasoning: decision.reasoning,
         timestamp: Date.now(),
+        asi: decision.asi,
       });
       updateUI(ctx, state.getState(), {
         type: 'steering',

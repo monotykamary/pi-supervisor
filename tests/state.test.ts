@@ -402,6 +402,74 @@ describe('SupervisorStateManager', () => {
     });
   });
 
+  describe('intervention ASI persistence', () => {
+    it('stores intervention with ASI', () => {
+      const api = createMockApi();
+      const state = new SupervisorStateManager(api);
+      state.start('Test goal', 'anthropic', 'claude-haiku');
+
+      state.addIntervention({
+        turnCount: 1,
+        message: 'Focus on tests',
+        reasoning: 'Drift detected',
+        timestamp: Date.now(),
+        asi: {
+          why_stuck: 'refactoring without tests',
+          strategy_used: 'directive',
+          pattern_detected: 'test_skipping',
+        },
+      });
+
+      const s = state.getState()!;
+      expect(s.interventions).toHaveLength(1);
+      expect(s.interventions[0].asi).toBeDefined();
+      expect(s.interventions[0].asi!.why_stuck).toBe('refactoring without tests');
+      expect(s.interventions[0].asi!.strategy_used).toBe('directive');
+    });
+
+    it('stores intervention without ASI (backward compat)', () => {
+      const api = createMockApi();
+      const state = new SupervisorStateManager(api);
+      state.start('Test goal', 'anthropic', 'claude-haiku');
+
+      state.addIntervention({
+        turnCount: 1,
+        message: 'Focus',
+        reasoning: 'Test',
+        timestamp: Date.now(),
+      });
+
+      const s = state.getState()!;
+      expect(s.interventions).toHaveLength(1);
+      expect(s.interventions[0].asi).toBeUndefined();
+    });
+
+    it('persists ASI to session via appendEntry', () => {
+      const api = createMockApi();
+      const state = new SupervisorStateManager(api);
+      state.start('Test goal', 'anthropic', 'claude-haiku');
+
+      state.addIntervention({
+        turnCount: 1,
+        message: 'Focus on tests',
+        reasoning: 'Drift',
+        timestamp: 1234567890,
+        asi: {
+          why_stuck: 'no tests',
+          custom_field: 'custom_value',
+        },
+      });
+
+      expect(api.appendEntry).toHaveBeenCalled();
+      const lastCall = api.appendEntry.mock.calls[api.appendEntry.mock.calls.length - 1];
+      const persistedData = lastCall[1];
+      expect(persistedData.interventions).toHaveLength(1);
+      expect(persistedData.interventions[0].asi).toBeDefined();
+      expect(persistedData.interventions[0].asi.why_stuck).toBe('no tests');
+      expect(persistedData.interventions[0].asi.custom_field).toBe('custom_value');
+    });
+  });
+
   describe('model management', () => {
     it('updates model when active', () => {
       const api = createMockApi();

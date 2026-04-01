@@ -5,6 +5,7 @@ import {
   updateSnapshot,
   buildUserPrompt,
   getReframeGuidance,
+  extractMetrics,
 } from '../src/engine.js';
 import type { SupervisorState } from '../src/types.js';
 
@@ -317,5 +318,104 @@ describe('buildUserPrompt', () => {
     expect(result).toContain('PREVIOUS INTERVENTIONS BY YOU:');
     expect(result).toContain('[1] Turn 1:');
     expect(result).toContain('Focus on X');
+  });
+
+  it('includes ASI from previous interventions', () => {
+    const state: SupervisorState = {
+      active: true,
+      outcome: 'Build API',
+      provider: 'anthropic',
+      modelId: 'claude',
+      interventions: [
+        {
+          turnCount: 1,
+          message: 'Focus on tests',
+          reasoning: 'Drift',
+          timestamp: 123456,
+          asi: {
+            why_stuck: 'agent refactoring without tests',
+            strategy_used: 'directive',
+          },
+        },
+      ],
+      startedAt: Date.now(),
+      turnCount: 2,
+    };
+
+    const result = buildUserPrompt(state, [], true);
+    expect(result).toContain('ASI: agent refactoring without tests');
+  });
+
+  it('does not include metrics section when only natural language text', () => {
+    const state: SupervisorState = {
+      active: true,
+      outcome: 'Build API',
+      provider: 'anthropic',
+      modelId: 'claude',
+      interventions: [],
+      startedAt: Date.now(),
+      turnCount: 1,
+    };
+
+    const snapshot = [
+      { role: 'assistant' as const, content: 'Coverage is now 87% and tests passing' },
+    ];
+
+    const result = buildUserPrompt(state, snapshot, true);
+    // The LLM reads raw text; no metrics section inserted for natural language
+    expect(result).not.toContain('METRICS DETECTED IN CONVERSATION:');
+  });
+
+  it('includes METRIC section when explicit markers present', () => {
+    const state: SupervisorState = {
+      active: true,
+      outcome: 'Build API',
+      provider: 'anthropic',
+      modelId: 'claude',
+      interventions: [],
+      startedAt: Date.now(),
+      turnCount: 1,
+    };
+
+    const snapshot = [
+      { role: 'assistant' as const, content: 'METRIC coverage=87\nAll tests passing' },
+    ];
+
+    const result = buildUserPrompt(state, snapshot, true);
+    expect(result).toContain('METRICS DETECTED IN CONVERSATION:');
+    expect(result).toContain('coverage: 87');
+  });
+});
+
+describe('extractMetrics', () => {
+  it('extracts autoresearch-style METRIC lines', () => {
+    const text = 'METRIC coverage=87.5\nMETRIC tests=42';
+    const result = extractMetrics(text);
+    expect(result).toEqual({ coverage: 87.5, tests: 42 });
+  });
+
+  it('returns empty object when no metrics found', () => {
+    const text = 'Coverage is now 87% and tests passing';
+    const result = extractMetrics(text);
+    expect(result).toEqual({});
+  });
+
+  it('returns empty object for regular conversation', () => {
+    const text = 'Just some regular conversation without METRIC markers';
+    const result = extractMetrics(text);
+    expect(result).toEqual({});
+  });
+
+  it('handles decimal values in METRIC lines', () => {
+    const text = 'METRIC accuracy=94.73';
+    const result = extractMetrics(text);
+    expect(result.accuracy).toBe(94.73);
+  });
+
+  it('ignores percentage patterns without METRIC marker', () => {
+    // The LLM supervisor reads the raw text - no need for us to parse
+    const text = 'Test coverage: 87% and everything looks good';
+    const result = extractMetrics(text);
+    expect(result).toEqual({});
   });
 });

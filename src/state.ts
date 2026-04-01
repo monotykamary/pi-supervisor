@@ -8,6 +8,7 @@ import type {
   SupervisorIntervention,
   ConversationMessage,
   ReframeTier,
+  InterventionASI,
 } from './types.js';
 
 const ENTRY_TYPE = 'supervisor-state';

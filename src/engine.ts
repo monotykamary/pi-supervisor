@@ -14,7 +14,12 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import type { ExtensionContext } from '@mariozechner/pi-coding-agent';
-import type { ConversationMessage, SteeringDecision, SupervisorState } from './types.js';
+import type {
+  ConversationMessage,
+  SteeringDecision,
+  SupervisorState,
+  InterventionASI,
+} from './types.js';
 import { callSupervisorModel } from './model-client.js';
 
 // ---- System prompt loading ----
@@ -58,13 +63,28 @@ Trust the agent to complete what it has started. Avoid interrupting productive w
 optional improvements do NOT block "done". Prefer stopping when the goal is substantially
 achieved rather than looping forever chasing perfection.
 
+═══ AFTER STEERING: SELF-REFLECTION ═══
+When you choose to steer, capture actionable side information (ASI) about why you intervened.
+This helps you learn which strategies work for future similar situations.
+
+ASI is free-form: use the suggested keys below, and add ANY additional keys you find useful.
+Examples: "test_count_before", "files_modified", "dead_end", "next_time_try", etc.
+
 Respond ONLY with valid JSON — no prose, no markdown fences.
 Response schema (strict JSON):
 {
   "action": "continue" | "steer" | "done",
   "message": "...",     // Required when action === "steer"
   "reasoning": "...",   // Brief internal reasoning
-  "confidence": 0.85    // Float 0-1
+  "confidence": 0.85,   // Float 0-1
+  "asi": {              // Optional: capture when steering. Free-form, arbitrary keys allowed.
+    "why_stuck": "what pattern indicated the agent needed help",
+    "strategy_used": "directive | subgoal | pivot | minimal_slice",
+    "pattern_detected": "e.g. repeated_refactoring_without_tests",
+    "confidence_source": "what signals informed your decision",
+    "would_escalate_sooner": true | false,
+    "...": "any additional keys you find useful"
+  }
 }`;
 
 /**
@@ -87,7 +107,27 @@ export function loadSystemPrompt(cwd: string): { prompt: string; source: string 
   return { prompt: BUILTIN_SYSTEM_PROMPT, source: 'built-in' };
 }
 
-// SNAPSHOT_LIMIT is defined below
+/**
+ * Extract metrics from conversation text.
+ * Simple pass-through: the LLM supervisor can read the raw text.
+ * Only explicitly marked METRIC lines are extracted for convenience.
+ */
+export function extractMetrics(text: string): Record<string, number> {
+  const metrics: Record<string, number> = {};
+
+  // Pattern: "METRIC name=value" (autoresearch-style - explicit marker)
+  const metricLines = text.match(/METRIC\s+(\w+)\s*=\s*([\d.]+)/g);
+  if (metricLines) {
+    for (const line of metricLines) {
+      const match = line.match(/METRIC\s+(\w+)\s*=\s*([\d.]+)/);
+      if (match) {
+        metrics[match[1]] = parseFloat(match[2]);
+      }
+    }
+  }
+
+  return metrics;
+}
 
 /** Extract text content from message. */
 function extractText(content: unknown): string {
@@ -210,8 +250,27 @@ export function buildUserPrompt(
       ? 'None yet.'
       : state.interventions
           .slice(-5)
-          .map((iv, i) => `[${i + 1}] Turn ${iv.turnCount}: "${iv.message}"`)
+          .map((iv, i) => {
+            let entry = `[${i + 1}] Turn ${iv.turnCount}: "${iv.message}"`;
+            if (iv.asi?.why_stuck) {
+              entry += `\n    ASI: ${iv.asi.why_stuck}`;
+            }
+            return entry;
+          })
           .join('\n');
+
+  // Extract metrics from all conversation messages
+  const allMetrics: Record<string, number> = {};
+  for (const msg of snapshot) {
+    const msgMetrics = extractMetrics(msg.content);
+    Object.assign(allMetrics, msgMetrics);
+  }
+  const metricsText =
+    Object.keys(allMetrics).length > 0
+      ? `METRICS DETECTED IN CONVERSATION:\n${Object.entries(allMetrics)
+          .map(([k, v]) => `  ${k}: ${v}`)
+          .join('\n')}\n`
+      : '';
 
   const conversationText =
     snapshot.length === 0
@@ -233,7 +292,7 @@ ${state.outcome}
 
 ${agentStatus}${reframeSection}
 
-RECENT CONVERSATION (last ${snapshot.length} messages):
+${metricsText}RECENT CONVERSATION (last ${snapshot.length} messages):
 ${conversationText}
 
 PREVIOUS INTERVENTIONS BY YOU:
