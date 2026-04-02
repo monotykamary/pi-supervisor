@@ -1,17 +1,22 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { SupervisorStateManager } from '../src/state.js';
+import { SupervisorStateManager } from '../src/state/manager.js';
 
 // Mock dependencies
-vi.mock('../src/engine.js', () => ({
+vi.mock('../src/core/analyzer.js', () => ({
   analyze: vi.fn(),
+}));
+
+vi.mock('../src/core/inference.js', () => ({
   inferOutcome: vi.fn(),
+}));
+
+vi.mock('../src/core/prompt-loader.js', () => ({
   loadSystemPrompt: vi.fn().mockReturnValue({ prompt: 'test prompt', source: 'built-in' }),
 }));
 
-vi.mock('../src/ui/status-widget.js', () => ({
+vi.mock('../src/ui/renderer.js', () => ({
   updateUI: vi.fn(),
   toggleWidget: vi.fn(),
-  isWidgetVisible: vi.fn().mockReturnValue(true),
 }));
 
 vi.mock('../src/ui/model-picker.js', () => ({
@@ -27,7 +32,7 @@ vi.mock('../src/global-config.js', () => ({
   saveGlobalModel: vi.fn(),
 }));
 
-vi.mock('../src/model-client.js', () => ({
+vi.mock('../src/session/client.js', () => ({
   disposeSession: vi.fn(),
 }));
 
@@ -38,8 +43,8 @@ vi.mock('../src/subagent-detector.js', () => ({
     .mockResolvedValue({ completed: true, finalStatus: { hasActiveSubagents: false, count: 0 } }),
 }));
 
-import { updateUI } from '../src/ui/status-widget.js';
-import { disposeSession } from '../src/model-client.js';
+import { updateUI } from '../src/ui/renderer.js';
+import { disposeSession } from '../src/session/client.js';
 
 // Mock ExtensionAPI
 function createMockApi() {

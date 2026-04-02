@@ -10,11 +10,7 @@
 import type { ExtensionContext } from '@mariozechner/pi-coding-agent';
 import type { SupervisorState } from '../types.js';
 import { createInitialState, type WidgetAction, WIDGET_ID } from './types.js';
-import {
-  toggleWidget as toggleWidgetImpl,
-  isWidgetVisible as isVisibleImpl,
-  updateUI as updateUIImpl,
-} from './renderer.js';
+import { toggleWidget as toggleWidgetImpl, updateUI as updateUIImpl } from './renderer.js';
 
 // Module-level state instance
 const state = createInitialState();
@@ -22,11 +18,6 @@ const state = createInitialState();
 /** Toggle the widget on/off. Returns the new visibility state. */
 export function toggleWidget(): boolean {
   return toggleWidgetImpl(state);
-}
-
-/** Check if the widget is currently visible. */
-export function isWidgetVisible(): boolean {
-  return isVisibleImpl(state);
 }
 
 /** Update footer + widget. Call this every time state or action changes. */

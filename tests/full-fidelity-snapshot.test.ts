@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { buildIncrementalSnapshot, buildUserPrompt } from '../src/engine.js';
-import type { SupervisorState, ContentBlock, ConversationMessage } from '../src/types.js';
+import { buildIncrementalSnapshot, buildUserPrompt } from '../src/core/index.js';
+import type { SupervisorState, ConversationMessage } from '../src/types.js';
 
 // Mock fs/os for the module
 vi.mock('node:fs', async () => {

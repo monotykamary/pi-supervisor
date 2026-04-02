@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseDecision } from '../src/model-client.js';
+import { parseDecision } from '../src/session/response-parser.js';
 import { extractThinking } from '../src/index.js';
 
 describe('parseDecision', () => {

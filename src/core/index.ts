@@ -26,11 +26,10 @@ export {
   extractAssistantText,
   blocksToString,
   extractMetrics,
-  createToolResultEntry,
 } from './content-extractor.js';
 
 // Reframe tier management
-export { getReframeGuidance, MAX_REFRAME_TIER, canEscalate, getNextTier } from './reframe.js';
+export { getReframeGuidance, MAX_REFRAME_TIER } from './reframe.js';
 
 // Outcome inference
 export { inferOutcome } from './inference.js';

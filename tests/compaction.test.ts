@@ -1,25 +1,26 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { SupervisorStateManager } from '../src/state.js';
+import { SupervisorStateManager } from '../src/state/manager.js';
 
 // Mock dependencies
-vi.mock('../src/engine.js', () => ({
+vi.mock('../src/core/analyzer.js', () => ({
   analyze: vi.fn(),
-  inferOutcome: vi.fn(),
+}));
+
+vi.mock('../src/core/prompt-loader.js', () => ({
   loadSystemPrompt: vi.fn().mockReturnValue({ prompt: 'test prompt', source: 'built-in' }),
 }));
 
-vi.mock('../src/ui/status-widget.js', () => ({
+vi.mock('../src/ui/renderer.js', () => ({
   updateUI: vi.fn(),
   toggleWidget: vi.fn(),
-  isWidgetVisible: vi.fn().mockReturnValue(true),
 }));
 
-vi.mock('../src/model-client.js', () => ({
+vi.mock('../src/session/client.js', () => ({
   disposeSession: vi.fn(),
 }));
 
-import { analyze } from '../src/engine.js';
-import { updateUI } from '../src/ui/status-widget.js';
+import { analyze } from '../src/core/analyzer.js';
+import { updateUI } from '../src/ui/renderer.js';
 
 // Mock ExtensionAPI
 function createMockApi() {

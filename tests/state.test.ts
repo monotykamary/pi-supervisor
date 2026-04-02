@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { SupervisorStateManager } from '../src/state.js';
+import { SupervisorStateManager } from '../src/state/manager.js';
 
 // Mock ExtensionAPI
 function createMockApi() {

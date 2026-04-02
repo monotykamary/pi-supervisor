@@ -10,8 +10,6 @@
 export { SupervisorStateManager, DEFAULT_PROVIDER, DEFAULT_MODEL_ID } from './manager.js';
 export {
   getReframeTier,
-  canEscalate,
-  getNextTier,
   escalateReframeTier,
   resetReframeTier,
   MAX_REFRAME_TIER,

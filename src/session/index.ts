@@ -8,5 +8,5 @@
  */
 
 export { SupervisorSession } from './supervisor-session.js';
-export { parseDecision, safeContinue } from './response-parser.js';
+export { parseDecision } from './response-parser.js';
 export { callSupervisorModel, getOrCreateSession, disposeSession } from './client.js';

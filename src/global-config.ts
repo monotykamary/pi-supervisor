@@ -7,7 +7,7 @@
  * Removed: sensitivity (now automatic)
  */
 
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const CONFIG_DIR = '.pi';
@@ -35,41 +35,4 @@ export function loadGlobalModel(): { provider: string; modelId: string } | null 
     // ignore parse errors
   }
   return null;
-}
-
-/** Save the supervisor model config to cwd/.pi/supervisor-config.json. */
-export function saveGlobalModel(provider: string, modelId: string): void {
-  const configDir = join(process.cwd(), CONFIG_DIR);
-  const configPath = join(configDir, CONFIG_FILE);
-
-  let existing: SupervisorConfig = {};
-  if (existsSync(configPath)) {
-    try {
-      existing = JSON.parse(readFileSync(configPath, 'utf-8')) as SupervisorConfig;
-    } catch {
-      // ignore parse errors
-    }
-  }
-
-  existing.model = { provider, modelId };
-
-  if (!existsSync(configDir)) {
-    mkdirSync(configDir, { recursive: true });
-  }
-  writeFileSync(configPath, JSON.stringify(existing, null, 2), 'utf-8');
-}
-
-/** Clear the supervisor config file. */
-export function clearGlobalConfig(): void {
-  const configPath = join(process.cwd(), CONFIG_DIR, CONFIG_FILE);
-  if (existsSync(configPath)) {
-    try {
-      const content = readFileSync(configPath, 'utf-8');
-      const parsed = JSON.parse(content) as SupervisorConfig;
-      delete parsed.model;
-      writeFileSync(configPath, JSON.stringify(parsed, null, 2), 'utf-8');
-    } catch {
-      // ignore errors
-    }
-  }
 }

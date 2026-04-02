@@ -15,11 +15,6 @@ export function toggleWidget(state: WidgetState): boolean {
   return state.widgetVisible;
 }
 
-/** Get current widget visibility */
-export function isWidgetVisible(state: WidgetState): boolean {
-  return state.widgetVisible;
-}
-
 /** Update footer + widget. Call this every time state or action changes. */
 export function updateUI(
   ctx: ExtensionContext,

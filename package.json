@@ -46,6 +46,7 @@
     "prettier": "^3.8.1",
     "simple-git-hooks": "^2.13.1",
     "standard-version": "^9.5.0",
+    "ts-unused-exports": "^11.0.1",
     "typescript": "^5.0.0",
     "vitest": "^2.1.9"
   },
@@ -53,6 +54,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
+    "lint:unused": "knip --no-gitignore",
+    "lint:exports": "ts-unused-exports tsconfig.json --showLineNumber",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "release": "standard-version",

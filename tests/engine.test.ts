@@ -26,8 +26,8 @@ import {
   getReframeGuidance,
   extractMetrics,
   inferOutcome,
-} from '../src/engine.js';
-import { SupervisorSession } from '../src/model-client.js';
+} from '../src/core/index.js';
+import { SupervisorSession } from '../src/session/supervisor-session.js';
 
 beforeEach(() => {
   vi.clearAllMocks();
