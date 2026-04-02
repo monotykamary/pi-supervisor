@@ -78,9 +78,25 @@ export default function (pi: ExtensionAPI) {
 
   // ---- Session lifecycle: restore state ----
 
+  /**
+   * Ephemeral supervision rule: supervision only survives if there's active work.
+   * When loading a session (start, switch, fork, tree navigation), if supervision
+   * was active but the agent is idle, we clear it. Supervision must be tied to
+   * real-time steering needs, not historical session state.
+   */
   const onSessionLoad = (ctx: ExtensionContext) => {
     currentCtx = ctx;
     state.loadFromSession(ctx);
+
+    // Ephemeral check: if supervision restored but agent is idle, stop it
+    if (state.isActive() && ctx.isIdle()) {
+      state.stop();
+      idleSteers = 0;
+      disposeSession();
+      // Notify that we cleared stale supervision
+      ctx.ui.notify('Supervision cleared: agent is idle', 'info');
+    }
+
     updateUI(ctx, widgetState, state.getState());
   };
 
@@ -98,80 +114,35 @@ export default function (pi: ExtensionAPI) {
     }
   });
 
-  // ---- After compaction: reload state and steer if needed ----
+  // ---- After compaction: reload state and continue supervision if agent is working ----
+  // Auto-compaction during long sessions should NOT stop supervision - we want to
+  // continue steering the agent toward the goal after compaction completes.
   pi.on('session_compact', async (_event, ctx) => {
     currentCtx = ctx;
     state.loadFromSession(ctx);
 
     // State should now be found (we persisted before compaction)
     if (!state.isActive()) {
-      // If somehow still lost, clear UI
       updateUI(ctx, widgetState, null);
       return;
     }
 
-    // Update UI to show we're back
+    // Ephemeral rule: if agent is idle after compaction, clear supervision
+    if (ctx.isIdle()) {
+      state.stop();
+      idleSteers = 0;
+      disposeSession();
+      ctx.ui.notify('Supervision cleared: compaction complete, agent idle', 'info');
+      updateUI(ctx, widgetState, null);
+      return;
+    }
+
+    // Agent is still working - show watching state and let supervision continue
+    // It will analyze/steer at the next agent_end as normal
     updateUI(ctx, widgetState, state.getState(), {
       type: 'watching',
       reframeTier: state.getReframeTier(),
     });
-
-    // If agent is idle after compaction, analyze and steer to get back on track
-    // Compaction often happens mid-conversation, so we need to check if we're still on goal
-    if (ctx.isIdle()) {
-      const s = state.getState()!;
-      updateUI(ctx, widgetState, s, {
-        type: 'analyzing',
-        turn: s.turnCount,
-        reframeTier: state.getReframeTier(),
-      });
-
-      const decision = await analyze(
-        ctx,
-        s,
-        true /* agent idle after compaction */,
-        undefined,
-        undefined,
-        (accumulated) => {
-          const thinking = extractThinking(accumulated);
-          updateUI(ctx, widgetState, state.getState()!, {
-            type: 'analyzing',
-            turn: s.turnCount,
-            reframeTier: state.getReframeTier(),
-            thinking,
-          });
-        }
-      );
-
-      if (decision.action === 'steer' && decision.message) {
-        idleSteers++;
-        state.addIntervention({
-          turnCount: s.turnCount,
-          message: decision.message,
-          reasoning: decision.reasoning,
-          timestamp: Date.now(),
-          asi: decision.asi,
-        });
-        updateUI(ctx, widgetState, state.getState(), {
-          type: 'steering',
-          message: decision.message,
-          reframeTier: state.getReframeTier(),
-        });
-        pi.sendUserMessage(decision.message);
-      } else if (decision.action === 'done') {
-        idleSteers = 0;
-        state.resetReframeTier();
-        updateUI(ctx, widgetState, state.getState(), { type: 'done' });
-        state.stop();
-        disposeSession();
-        updateUI(ctx, widgetState, state.getState());
-      } else {
-        updateUI(ctx, widgetState, state.getState(), {
-          type: 'watching',
-          reframeTier: state.getReframeTier(),
-        });
-      }
-    }
   });
 
   // ---- Keep ctx fresh ----
