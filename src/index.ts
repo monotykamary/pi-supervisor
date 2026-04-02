@@ -8,7 +8,7 @@
  * - Incremental 6-message snapshots
  *
  * Commands:
- *   /supervise              — auto-infer goal from conversation, or open settings
+ *   /supervise              — auto-infer goal from conversation
  *   /supervise <outcome>    — start supervising with explicit goal
  *   /supervise stop         — stop supervising
  *   /supervise widget       — toggle the status widget on/off
@@ -20,10 +20,9 @@ import { SupervisorStateManager } from './state/manager.js';
 import { analyze } from './core/analyzer.js';
 import { inferOutcome } from './core/inference.js';
 import { loadSystemPrompt } from './core/prompt-loader.js';
-import { updateUI, toggleWidget, isWidgetVisible } from './ui/renderer.js';
+import { updateUI, toggleWidget } from './ui/renderer.js';
 import { pickModel } from './ui/model-picker.js';
-import { openSettings } from './ui/settings-panel.js';
-import { loadGlobalModel, saveGlobalModel } from './global-config.js';
+import { loadGlobalModel } from './global-config.js';
 import { disposeSession } from './session/client.js';
 import { Type } from '@sinclair/typebox';
 import { checkChildPiProcesses, waitForSubagents } from './subagent-detector.js';
@@ -331,103 +330,66 @@ export default function (pi: ExtensionAPI) {
         return;
       }
 
-      // --- interactive settings panel ---
+      // --- infer goal from conversation (no args) ---
 
       if (!trimmed) {
         const s = state.getState();
         const globalModel = loadGlobalModel();
         const sessionModel = ctx.model;
-        const defaultProvider = s?.provider ?? globalModel?.provider ?? sessionModel?.provider;
-        const defaultModelId = s?.modelId ?? globalModel?.modelId ?? sessionModel?.id;
+        let provider = s?.provider ?? globalModel?.provider ?? sessionModel?.provider ?? 'unknown';
+        let modelId = s?.modelId ?? globalModel?.modelId ?? sessionModel?.id ?? 'unknown';
 
-        // Check if there's conversation history and no active supervision
+        // Check if there's conversation history
         const hasConversation = !s?.active && hasUserMessages(ctx);
-
-        if (hasConversation) {
-          // Offer to infer outcome from conversation
-          const choice = await ctx.ui.select('Supervision options:', [
-            'Infer goal from conversation',
-            'Open settings panel',
-            'Cancel',
-          ]);
-
-          if (choice === 'Cancel' || choice === undefined) {
-            return;
-          }
-
-          if (choice === 'Infer goal from conversation') {
-            updateUI(ctx, widgetState, state.getState(), { type: 'inferring' });
-            const inferProvider = defaultProvider ?? sessionModel?.provider ?? 'unknown';
-            const inferModelId = defaultModelId ?? sessionModel?.id ?? 'unknown';
-            const inferred = await inferOutcome(ctx, inferProvider, inferModelId);
-            updateUI(ctx, widgetState, state.getState());
-
-            if (!inferred) {
-              ctx.ui.notify(
-                'Could not infer goal from conversation. Opening settings panel.',
-                'warning'
-              );
-              // Fall through to settings panel
-            } else {
-              // Start supervision immediately with inferred outcome and global settings
-              const startProvider = defaultProvider ?? sessionModel?.provider ?? 'unknown';
-              const startModelId = defaultModelId ?? sessionModel?.id ?? 'unknown';
-              state.start(inferred, startProvider, startModelId);
-              idleSteers = 0;
-              updateUI(ctx, widgetState, state.getState());
-
-              // Kickstart the agent if idle - inferred goals should trigger immediate work
-              if (ctx.isIdle()) {
-                pi.sendUserMessage(`Please start working on this goal: ${inferred}`, {
-                  deliverAs: 'followUp',
-                });
-              }
-
-              ctx.ui.notify(`Supervisor active: "${truncateForNotify(inferred, 25)}"`, 'info');
-              return;
-            }
-          }
-          // If "Open settings panel" or inference failed, fall through
-        }
-
-        const result = await openSettings(
-          ctx,
-          s,
-          defaultProvider ?? sessionModel?.provider ?? 'unknown',
-          defaultModelId ?? sessionModel?.id ?? 'unknown'
-        );
-        if (!result) return; // user cancelled with no changes
-
-        // Apply model change
-        if (result.model) {
-          const { provider: p, modelId: m } = result.model;
-          if (state.isActive()) {
-            state.setModel(p, m);
-          }
-          saveGlobalModel(p, m);
+        if (!hasConversation) {
           ctx.ui.notify(
-            `Supervisor model set to ${p}/${m}${state.isActive() ? '' : ' (takes effect on next /supervise)'} · saved globally`,
-            'info'
+            'No conversation history found. Use /supervise <goal> to set an explicit goal.',
+            'warning'
           );
+          return;
         }
 
-        // Apply widget toggle
-        if (result.widget !== undefined) {
-          const currentlyVisible = isWidgetVisible(widgetState);
-          if (result.widget !== currentlyVisible) {
-            toggleWidget(widgetState);
+        // Only prompt for a model if none has been configured yet
+        if (!s) {
+          const apiKey = await ctx.modelRegistry.getApiKeyForProvider(provider);
+          if (!apiKey) {
+            ctx.ui.notify(
+              `No API key for "${provider}/${modelId}" — pick a model with an available key.`,
+              'warning'
+            );
+            const picked = await pickModel(ctx, provider, modelId);
+            if (!picked) return; // user cancelled
+            provider = picked.provider;
+            modelId = picked.id;
           }
         }
 
-        // Apply stop action
-        if (result.action === 'stop' && state.isActive()) {
-          state.stop();
-          idleSteers = 0;
-          disposeSession();
-          ctx.ui.notify('Supervisor stopped.', 'info');
+        // Infer goal from conversation
+        updateUI(ctx, widgetState, state.getState(), { type: 'inferring' });
+        const inferred = await inferOutcome(ctx, provider, modelId);
+        updateUI(ctx, widgetState, state.getState());
+
+        if (!inferred) {
+          ctx.ui.notify(
+            'Could not infer goal from conversation. Use /supervise <goal> to set an explicit goal.',
+            'warning'
+          );
+          return;
         }
 
+        // Start supervision with inferred outcome
+        state.start(inferred, provider, modelId);
+        idleSteers = 0;
         updateUI(ctx, widgetState, state.getState());
+
+        // Kickstart the agent if idle
+        if (ctx.isIdle()) {
+          pi.sendUserMessage(`Please start working on this goal: ${inferred}`, {
+            deliverAs: 'followUp',
+          });
+        }
+
+        ctx.ui.notify(`Supervisor active: "${truncateForNotify(inferred, 25)}"`, 'info');
         return;
       }
 
