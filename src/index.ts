@@ -14,6 +14,7 @@
  *   /supervise widget       — toggle the status widget on/off
  */
 
+import { truncateToWidth } from '@mariozechner/pi-tui';
 import type { ExtensionAPI, ExtensionContext } from '@mariozechner/pi-coding-agent';
 import { SupervisorStateManager } from './state/manager.js';
 import { analyze } from './core/analyzer.js';
@@ -44,6 +45,16 @@ export function extractThinking(accumulated: string): string {
   const closeIdx = content.search(/(?<!\\)"/);
   const raw = closeIdx === -1 ? content : content.slice(0, closeIdx);
   return raw.replace(/\\n/g, ' ').replace(/\\"/g, '"').trim();
+}
+
+/**
+ * Truncate a message to fit within the terminal width for notifications.
+ * Reserves space for the notification prefix and padding.
+ */
+function truncateForNotify(message: string, reserveChars: number = 20): string {
+  const terminalWidth = process.stdout.columns || 100;
+  const maxContentWidth = Math.max(20, terminalWidth - reserveChars);
+  return truncateToWidth(message, maxContentWidth, '…');
 }
 
 /** Check if the session has any user messages in its history. */
@@ -372,10 +383,7 @@ export default function (pi: ExtensionAPI) {
                 });
               }
 
-              ctx.ui.notify(
-                `Supervisor active: "${inferred.slice(0, 50)}${inferred.length > 50 ? '…' : ''}"`,
-                'info'
-              );
+              ctx.ui.notify(`Supervisor active: "${truncateForNotify(inferred, 25)}"`, 'info');
               return;
             }
           }
@@ -438,7 +446,7 @@ export default function (pi: ExtensionAPI) {
         updateUI(ctx, widgetState, state.getState());
 
         ctx.ui.notify(
-          `Supervisor goal expanded: "${trimmed.slice(0, 50)}${trimmed.length > 50 ? '…' : ''}" added to active supervision.`,
+          `Supervisor goal expanded: "${truncateForNotify(trimmed, 30)}" added to active supervision.`,
           'info'
         );
         return;
@@ -470,10 +478,7 @@ export default function (pi: ExtensionAPI) {
         });
       }
 
-      ctx.ui.notify(
-        `Supervisor active: "${trimmed.slice(0, 50)}${trimmed.length > 50 ? '…' : ''}"`,
-        'info'
-      );
+      ctx.ui.notify(`Supervisor active: "${truncateForNotify(trimmed, 25)}"`, 'info');
     },
   });
 
@@ -530,7 +535,7 @@ export default function (pi: ExtensionAPI) {
 
       // Notify the user so they're aware supervision was initiated by the model
       ctx.ui.notify(
-        `Supervisor started by agent: "${params.outcome.slice(0, 60)}${params.outcome.length > 60 ? '…' : ''}"`,
+        `Supervisor started by agent: "${truncateForNotify(params.outcome, 30)}"`,
         'info'
       );
 
