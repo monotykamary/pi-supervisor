@@ -17,21 +17,9 @@ export interface SupervisorIntervention {
 /** Reframe tier tracks escalation of intervention strategies */
 export type ReframeTier = 0 | 1 | 2 | 3 | 4;
 
-/** Actionable Side Information — self-generated diagnostics per intervention */
+/** Actionable Side Information — free-form observations from interventions */
 export interface InterventionASI {
-  /** Why the agent was stuck or needed steering */
-  why_stuck?: string;
-  /** What strategy was used (directive, subgoal, pivot, etc.) */
-  strategy_used?: string;
-  /** Pattern detected in agent behavior */
-  pattern_detected?: string;
-  /** What signals indicated this was needed */
-  confidence_source?: string;
-  /** Whether to escalate sooner next time */
-  would_escalate_sooner?: boolean;
-  /** Time to progress after this intervention */
-  time_to_progress?: number;
-  /** Free-form additional observations */
+  /** Any observations worth remembering for future decisions */
   [key: string]: unknown;
 }
 

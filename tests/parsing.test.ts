@@ -190,6 +190,55 @@ describe('parseDecision', () => {
     expect(result.asi!.why_stuck).toBe('already done');
     expect(result.asi!.strategy_used).toBeUndefined();
   });
+
+  it('parses free-form ASI with arbitrary keys for cheating detection', () => {
+    const text = JSON.stringify({
+      action: 'steer',
+      message: 'Verify your claim',
+      reasoning: 'Suspicious unverified claim',
+      confidence: 0.9,
+      asi: {
+        suspicious_claim_detected: true,
+        claim_type: 'unverified_test_success',
+        evidence: 'agent_said_tests_pass_but_exit_code_1',
+        previous_contradiction_turn: 3,
+        watch_for: 'fake_test_results',
+        custom_observation: 'agent_removed_assertions_in_same_turn',
+      },
+    });
+
+    const result = parseDecision(text);
+    expect(result.asi).toBeDefined();
+    expect(result.asi!.suspicious_claim_detected).toBe(true);
+    expect(result.asi!.claim_type).toBe('unverified_test_success');
+    expect(result.asi!.evidence).toBe('agent_said_tests_pass_but_exit_code_1');
+    expect(result.asi!.previous_contradiction_turn).toBe(3);
+    expect(result.asi!.watch_for).toBe('fake_test_results');
+    expect(result.asi!.custom_observation).toBe('agent_removed_assertions_in_same_turn');
+  });
+
+  it('parses ASI with cheating-related keywords', () => {
+    const text = JSON.stringify({
+      action: 'steer',
+      message: 'Do not manipulate tests',
+      reasoning: 'Test manipulation detected',
+      confidence: 0.95,
+      asi: {
+        pattern: 'test_manipulation',
+        indicator: 'fake',
+        observation: 'agent_gaming_the_metrics',
+        status: 'unverified_claim',
+        severity: 'high',
+      },
+    });
+
+    const result = parseDecision(text);
+    expect(result.asi).toBeDefined();
+    expect(result.asi!.pattern).toBe('test_manipulation');
+    expect(result.asi!.indicator).toBe('fake');
+    expect(result.asi!.observation).toBe('agent_gaming_the_metrics');
+    expect(result.asi!.status).toBe('unverified_claim');
+  });
 });
 
 describe('extractThinking', () => {

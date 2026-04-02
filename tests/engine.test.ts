@@ -76,6 +76,34 @@ describe('loadSystemPrompt', () => {
 
     expect(result.source).toBe('/test/cwd/.pi/SUPERVISOR.md');
   });
+
+  it('built-in prompt includes cheating prevention section', () => {
+    vi.mocked(existsSync).mockReturnValue(false); // Neither project nor global exists
+
+    const result = loadSystemPrompt('/test/cwd');
+
+    expect(result.source).toBe('built-in');
+    expect(result.prompt).toContain('═══ CHEATING PREVENTION ═══');
+    expect(result.prompt).toContain('Unverified Claims');
+    expect(result.prompt).toContain('Test Manipulation');
+    expect(result.prompt).toContain('Metric Gaming');
+    expect(result.prompt).toContain('Short-Circuiting');
+    expect(result.prompt).toContain('Contradictions');
+  });
+
+  it('built-in prompt includes ASI loop section', () => {
+    vi.mocked(existsSync).mockReturnValue(false); // Neither project nor global exists
+
+    const result = loadSystemPrompt('/test/cwd');
+
+    expect(result.source).toBe('built-in');
+    expect(result.prompt).toContain('═══ CLOSING THE ASI LOOP ═══');
+    expect(result.prompt).toContain(
+      'ASI (Actionable Side Information) is your memory across turns'
+    );
+    expect(result.prompt).toContain('READ your past ASI entries');
+    expect(result.prompt).toContain('REQUIRED when steering');
+  });
 });
 
 describe('SNAPSHOT_LIMIT', () => {
@@ -321,7 +349,7 @@ describe('buildUserPrompt', () => {
     };
 
     const result = buildUserPrompt(state, [], true);
-    expect(result).toContain('PREVIOUS INTERVENTIONS BY YOU:');
+    expect(result).toContain('YOUR INTERVENTION HISTORY (with ASI observations):');
     expect(result).toContain('[1] Turn 1:');
     expect(result).toContain('Focus on X');
   });
@@ -349,7 +377,138 @@ describe('buildUserPrompt', () => {
     };
 
     const result = buildUserPrompt(state, [], true);
-    expect(result).toContain('ASI: agent refactoring without tests');
+    expect(result).toContain('ASI {');
+    expect(result).toContain('why_stuck: "agent refactoring without tests"');
+    expect(result).toContain('strategy_used: "directive"');
+  });
+
+  it('surfaces recurring ASI patterns in summary', () => {
+    const state: SupervisorState = {
+      active: true,
+      outcome: 'Build API',
+      provider: 'anthropic',
+      modelId: 'claude',
+      interventions: [
+        {
+          turnCount: 1,
+          message: 'Focus on tests',
+          reasoning: 'Drift',
+          timestamp: 123456,
+          asi: { suspicious_claim: true, pattern: 'unverified' },
+        },
+        {
+          turnCount: 2,
+          message: 'Verify the output',
+          reasoning: 'Contradiction',
+          timestamp: 123457,
+          asi: { suspicious_claim: true, pattern: 'contradicted' },
+        },
+        {
+          turnCount: 3,
+          message: 'Show proof',
+          reasoning: 'Unverified',
+          timestamp: 123458,
+          asi: { requires_proof: true },
+        },
+      ],
+      startedAt: Date.now(),
+      turnCount: 4,
+    };
+
+    const result = buildUserPrompt(state, [], true);
+    expect(result).toContain('ASI PATTERN SUMMARY');
+    expect(result).toContain('Pattern seen 2x: "suspicious_claim"');
+    expect(result).toContain('⚠️ Previous interventions flagged suspicious claims');
+  });
+
+  it('warns about verification failures in ASI summary', () => {
+    const state: SupervisorState = {
+      active: true,
+      outcome: 'Build API',
+      provider: 'anthropic',
+      modelId: 'claude',
+      interventions: [
+        {
+          turnCount: 1,
+          message: 'Focus on tests',
+          reasoning: 'Drift',
+          timestamp: 123456,
+          asi: { claim_status: 'contradicted_by_tool_output' },
+        },
+        {
+          turnCount: 2,
+          message: 'Verify the output',
+          reasoning: 'Contradiction',
+          timestamp: 123457,
+          asi: { claim_status: 'unverified' },
+        },
+        {
+          turnCount: 3,
+          message: 'Show proof',
+          reasoning: 'Unverified',
+          timestamp: 123458,
+          asi: { claim_status: 'contradicted_by_tool_output' },
+        },
+      ],
+      startedAt: Date.now(),
+      turnCount: 4,
+    };
+
+    const result = buildUserPrompt(state, [], true);
+    expect(result).toContain('ASI PATTERN SUMMARY');
+    expect(result).toContain('⚠️ 3 interventions involved unverified/contradicted claims');
+    expect(result).toContain('agent has pattern of unreliable reporting');
+  });
+
+  it('detects suspicious keywords in ASI values', () => {
+    const state: SupervisorState = {
+      active: true,
+      outcome: 'Build API',
+      provider: 'anthropic',
+      modelId: 'claude',
+      interventions: [
+        {
+          turnCount: 1,
+          message: 'Check for cheating',
+          reasoning: 'Suspicious',
+          timestamp: 123456,
+          asi: { observation: 'agent_attempted_to_fake_test_results' },
+        },
+      ],
+      startedAt: Date.now(),
+      turnCount: 2,
+    };
+
+    const result = buildUserPrompt(state, [], true);
+    expect(result).toContain('ASI PATTERN SUMMARY');
+    expect(result).toContain('⚠️ Previous interventions flagged suspicious claims');
+  });
+
+  it('handles empty ASI gracefully', () => {
+    const state: SupervisorState = {
+      active: true,
+      outcome: 'Build API',
+      provider: 'anthropic',
+      modelId: 'claude',
+      interventions: [
+        {
+          turnCount: 1,
+          message: 'Focus on X',
+          reasoning: 'Drift',
+          timestamp: 123456,
+          // No ASI
+        },
+      ],
+      startedAt: Date.now(),
+      turnCount: 2,
+    };
+
+    const result = buildUserPrompt(state, [], true);
+    // Should not show ASI section for empty ASI
+    expect(result).toContain('[1] Turn 1: "Focus on X"');
+    expect(result).not.toContain('ASI {}');
+    // No ASI summary when no patterns
+    expect(result).not.toContain('ASI PATTERN SUMMARY');
   });
 
   it('does not include metrics section when only natural language text', () => {
