@@ -1,7 +1,6 @@
 /**
- * Supervisor UI - footer status indicator and widget.
+ * Supervisor UI - status widget.
  *
- * Footer: 🎯 emoji badge.
  * Widget line 1: ◉ Supervising · Goal: "..." · steers · action
  * Widget line 2: dim thinking text while analyzing (temporary)
  *
@@ -10,7 +9,7 @@
 
 import type { ExtensionContext } from '@mariozechner/pi-coding-agent';
 import type { SupervisorState } from '../types.js';
-import { createInitialState, type WidgetAction, WIDGET_ID, STATUS_ID } from './types.js';
+import { createInitialState, type WidgetAction, WIDGET_ID } from './types.js';
 import {
   toggleWidget as toggleWidgetImpl,
   isWidgetVisible as isVisibleImpl,
@@ -43,4 +42,4 @@ export function updateUI(
 export type { WidgetAction } from './types.js';
 
 // Re-export constants for external use
-export { WIDGET_ID, STATUS_ID } from './types.js';
+export { WIDGET_ID } from './types.js';

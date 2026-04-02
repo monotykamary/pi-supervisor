@@ -5,7 +5,7 @@
 import type { ExtensionContext } from '@mariozechner/pi-coding-agent';
 import type { WidgetState, WidgetAction } from './types.js';
 import type { SupervisorIntervention } from '../types.js';
-import { WIDGET_ID, STATUS_ID, ANIMATION_STEP_MS } from './types.js';
+import { WIDGET_ID, ANIMATION_STEP_MS } from './types.js';
 
 /** Type for the render function callback */
 export type RenderFn = (
@@ -50,7 +50,6 @@ export function startLineClearAnimation(
         state.lastThinkingLines = [];
         state.hiddenFromBottomCount = 0;
         state.storedAction = null;
-        ctx.ui.setStatus(STATUS_ID, undefined);
         ctx.ui.setWidget(WIDGET_ID, undefined);
         return;
       }

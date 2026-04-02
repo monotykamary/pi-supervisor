@@ -44,6 +44,5 @@ export function createInitialState(): WidgetState {
 
 /** Constants for widget behavior */
 export const WIDGET_ID = 'supervisor';
-export const STATUS_ID = 'supervisor';
 export const CLEAR_DELAY_MS = 15000;
 export const ANIMATION_STEP_MS = 500;

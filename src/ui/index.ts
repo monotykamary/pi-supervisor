@@ -9,10 +9,4 @@
 
 export { toggleWidget, isWidgetVisible, updateUI } from './renderer.js';
 export { startLineClearAnimation, type RenderFn } from './animations.js';
-export {
-  createInitialState,
-  WIDGET_ID,
-  STATUS_ID,
-  type WidgetAction,
-  type WidgetState,
-} from './types.js';
+export { createInitialState, WIDGET_ID, type WidgetAction, type WidgetState } from './types.js';

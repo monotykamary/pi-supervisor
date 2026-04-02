@@ -6,7 +6,7 @@ import type { ExtensionContext } from '@mariozechner/pi-coding-agent';
 import { truncateToWidth } from '@mariozechner/pi-tui';
 import type { SupervisorIntervention, SupervisorState } from '../types.js';
 import type { WidgetAction, WidgetState } from './types.js';
-import { WIDGET_ID, STATUS_ID, CLEAR_DELAY_MS } from './types.js';
+import { WIDGET_ID, CLEAR_DELAY_MS } from './types.js';
 import { startLineClearAnimation, type RenderFn } from './animations.js';
 
 /** Toggle the widget on/off. Returns the new visibility state. */
@@ -71,7 +71,6 @@ export function updateUI(
 
   // Handle inferring specially
   if (action.type === 'inferring') {
-    ctx.ui.setStatus(STATUS_ID, '🎯');
     if (state.widgetVisible) {
       const inferState = { outcome: '', interventions: state.lastActiveState?.interventions ?? [] };
       renderWithState(ctx, state, inferState, action, '', 0);
@@ -112,12 +111,9 @@ export function updateUI(
 
   if (!supervisorState || !supervisorState.active) {
     state.lastThinkingLines = [];
-    ctx.ui.setStatus(STATUS_ID, undefined);
     ctx.ui.setWidget(WIDGET_ID, undefined);
     return;
   }
-
-  ctx.ui.setStatus(STATUS_ID, '🎯');
 
   if (!state.widgetVisible) {
     ctx.ui.setWidget(WIDGET_ID, undefined);
