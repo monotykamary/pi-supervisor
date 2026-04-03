@@ -42,16 +42,18 @@ pi -e ~/projects/pi-supervisor/src/index.ts
 
 ## Commands
 
-| Command                | Description                                               |
-| ---------------------- | --------------------------------------------------------- |
-| `/supervise`           | Auto-infer goal from conversation, or open settings panel |
-| `/supervise <outcome>` | Start supervising with explicit goal                      |
-| `/supervise stop`      | Stop active supervision                                   |
-| `/supervise widget`    | Toggle the status widget on/off                           |
+| Command                | Description                               |
+| ---------------------- | ----------------------------------------- |
+| `/supervise`           | Auto-infer goal from conversation history |
+| `/supervise <outcome>` | Start supervising with explicit goal      |
+| `/supervise stop`      | Stop active supervision                   |
+| `/supervise widget`    | Toggle the status widget on/off           |
 
 ### Examples
 
 ```
+/supervise
+
 /supervise Refactor the auth module to use dependency injection and add 90% test coverage
 
 /supervise stop
@@ -61,26 +63,9 @@ The agent can also initiate supervision itself by calling the `start_supervision
 
 ## UI
 
-### Settings Panel
-
-Run `/supervise` (no args) to open the interactive settings panel:
-
-- **Model** — shows current model; press Enter to browse all available models
-- **Widget** — toggle visibility
-- **Outcome** (when active) — shows goal, steer count, and turn count
-- **Stop** (when active) — stop supervision directly from the panel
-
-Navigate with arrow keys, Escape to close. Changes are applied on close.
-
 ### Live Widget
 
-**Footer** (always visible while supervising):
-
-```
-🎯
-```
-
-**Widget** (one line, updated live, text truncates to fit window width):
+The widget displays supervision state in a compact one-line format (text truncates to fit window width):
 
 ```
 ◉ Supervising · Goal: "Refactor auth module…" · ↗ 2 · steering
@@ -141,10 +126,10 @@ The supervisor runs on a **separate model** — it can be a cheaper/faster model
 **Resolution order:**
 
 1. Previous session state (persists within a session)
-2. `.pi/supervisor-config.json` in the project root (saved via settings panel)
+2. `.pi/supervisor-config.json` in the project root (saved when you pick a model)
 3. Active chat model (`ctx.model`) — so it works out of the box with no configuration
 
-Change at any time through the settings panel (run `/supervise` and select **Model**). The selection is saved to `.pi/supervisor-config.json` if the `.pi/` directory exists.
+Change at any time by running `/supervise <goal>` with a different model active, or delete `.pi/supervisor-config.json` to reset.
 
 ## Focus and Goal Discipline
 
@@ -164,7 +149,7 @@ The supervisor's reasoning is controlled by its **system prompt** — not the go
 | 2        | `~/.pi/agent/SUPERVISOR.md` | Global personal rules  |
 | 3        | Built-in template           | Fallback               |
 
-The active source is shown when you run `/supervise` or `/supervise status`.
+The active source is shown when you run `/supervise <goal>` or when the tool is invoked.
 
 ### Built-in system prompt
 
@@ -261,14 +246,20 @@ Coverage report generated in `coverage/`.
 src/
   index.ts              # Extension entry point, event wiring, /supervise command, start_supervision tool
   types.ts              # SupervisorState, SteeringDecision, ConversationMessage, ReframeTier
-  state.ts              # SupervisorStateManager — in-memory state + session persistence, reframe tier management, pattern detection
-  engine.ts             # Snapshot building, SUPERVISOR.md loading, prompt construction, analyze(), reframe guidance
-  model-client.ts       # SupervisorSession (reusable), one-shot calls via pi's AgentSession API
-  global-config.ts      # .pi/supervisor-config.json read/write for model persistence
-  ui/
-    status-widget.ts    # 🎯 footer badge + one-line widget with live thinking stream + reframe tier indicator
-    model-picker.ts     # Interactive model picker using pi's ModelSelectorComponent
-    settings-panel.ts   # Interactive settings overlay using pi-tui's SettingsList
+  state/                # State management
+    manager.ts          # SupervisorStateManager — persistence, reframe tier, pattern detection
+  core/                 # Core supervision logic
+    analyzer.ts         # Main analysis engine
+    inference.ts        # Goal inference from conversation
+    prompt-loader.ts    # SUPERVISOR.md loading
+  session/              # Model session management
+    client.ts           # SupervisorSession (reusable), API calls
+  ui/                   # User interface
+    renderer.ts         # Widget rendering and footer management
+    animations.ts       # Thought clearing animations
+    types.ts            # Widget state types
+    model-picker.ts     # Interactive model picker
+  global-config.ts      # .pi/supervisor-config.json read/write
 ```
 
 ## License
