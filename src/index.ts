@@ -111,8 +111,11 @@ export default function (pi: ExtensionAPI) {
   };
 
   pi.on('session_start', async (_event, ctx) => onSessionLoad(ctx));
-  pi.on('session_switch', async (_event, ctx) => onSessionLoad(ctx));
-  pi.on('session_fork', async (_event, ctx) => onSessionLoad(ctx));
+  pi.on('session_start', async (event, ctx) => {
+    // Handle new, resume, and fork reasons (existing sessions), not startup/reload
+    if (event.reason === 'startup' || event.reason === 'reload') return;
+    onSessionLoad(ctx);
+  });
   pi.on('session_tree', async (_event, ctx) => onSessionLoad(ctx));
 
   // ---- Compaction survival: persist state BEFORE compaction ----

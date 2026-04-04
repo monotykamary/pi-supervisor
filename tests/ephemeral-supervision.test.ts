@@ -157,7 +157,7 @@ describe('Ephemeral Supervision - idle agent clears supervision', () => {
     });
   });
 
-  describe('session_switch (resume another session)', () => {
+  describe('session_start with resume reason (resume another session)', () => {
     it('clears supervision when agent is idle', () => {
       startActiveSupervision();
 
@@ -217,7 +217,7 @@ describe('Ephemeral Supervision - idle agent clears supervision', () => {
     });
   });
 
-  describe('session_fork', () => {
+  describe('session_start with fork reason (fork session)', () => {
     it('clears supervision when agent is idle', () => {
       startActiveSupervision();
 
