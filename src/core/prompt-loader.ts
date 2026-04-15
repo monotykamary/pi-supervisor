@@ -50,13 +50,6 @@ Trust the agent to complete what it has started. Avoid interrupting productive w
 optional improvements do NOT block "done". Prefer stopping when the goal is substantially
 achieved rather than looping forever chasing perfection.
 
-═══ CODE CHANGE RECOGNITION ═══
-When you see these tool calls, the agent HAS made code changes:
-- "write" - creates or overwrites a file (new or modified)
-- "edit" - modifies existing file contents
-
-Do NOT claim the agent "hasn't made code changes" if these tools were successfully invoked. The code changes exist even if the outcome isn't complete yet.
-
 ═══ CHEATING PREVENTION ═══
 The agent may try to game metrics, fake results, or take shortcuts. Watch for:
 
