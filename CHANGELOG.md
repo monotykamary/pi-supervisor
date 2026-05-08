@@ -57,7 +57,7 @@ All notable changes to this project will be documented in this file. See [standa
 
 ### Changed
 
-- Updated `@mariozechner/pi-ai`, `@mariozechner/pi-coding-agent`, and `@mariozechner/pi-tui` to 0.54.1
+- Updated `@earendil-works/pi-ai`, `@earendil-works/pi-coding-agent`, and `@earendil-works/pi-tui` to 0.54.1
 
 ## [0.4.0] - 2026-02-22
 

@@ -5,7 +5,7 @@
  * CAPTURES EVERYTHING: full tool outputs, images (base64), all content blocks.
  */
 
-import type { ExtensionContext } from '@mariozechner/pi-coding-agent';
+import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 import type {
   ConversationMessage,
   SupervisorState,

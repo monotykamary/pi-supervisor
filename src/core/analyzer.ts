@@ -2,7 +2,7 @@
  * Main analyzer - orchestrates supervisor analysis.
  */
 
-import type { ExtensionContext } from '@mariozechner/pi-coding-agent';
+import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 import type { SteeringDecision, SupervisorState } from '../types.js';
 import { callSupervisorModel } from '../session/client.js';
 import { loadSystemPrompt } from './prompt-loader.js';
