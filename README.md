@@ -31,7 +31,7 @@ The supervisor is a pure outside observer. It runs in a separate in-memory pi se
 ## Install
 
 ```bash
-pi install git:github.com/monotykamary/pi-supervisor@master
+pi install https://github.com/monotykamary/pi-supervisor@master
 ```
 
 Or load directly for development:
