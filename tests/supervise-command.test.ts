@@ -60,18 +60,16 @@ describe('SupervisorStateManager - goal append feature', () => {
     const api = createMockApi();
     const state = new SupervisorStateManager(api);
 
-    // Start initial supervision
     state.start('Initial goal', 'anthropic', 'claude-haiku');
     expect(state.getState()!.outcome).toBe('Initial goal');
 
-    // Simulate appending (behavior from command handler)
     const trimmed = 'Additional requirement';
     const existing = state.getState();
     const appendedOutcome = `${existing!.outcome}. Additionally: ${trimmed}`;
     state.updateOutcome(appendedOutcome);
 
     expect(state.getState()!.outcome).toBe('Initial goal. Additionally: Additional requirement');
-    expect(api.appendEntry).toHaveBeenCalledTimes(2); // start + update
+    expect(api.appendEntry).toHaveBeenCalledTimes(2);
   });
 
   it('persists appended goal to session', () => {
@@ -101,9 +99,7 @@ describe('SupervisorStateManager - goal append feature', () => {
     const state = new SupervisorStateManager(api);
 
     state.start('Goal', 'openai', 'gpt-4o');
-    state.incrementTurnCount();
     state.addIntervention({
-      turnCount: 1,
       message: 'Focus',
       reasoning: 'Test',
       timestamp: Date.now(),
@@ -189,16 +185,13 @@ describe('Supervise command kickstart behavior', () => {
 
   describe('when agent is idle', () => {
     it('should kickstart with goal when running explicit /supervise <outcome>', async () => {
-      // This tests the behavior pattern from the command handler
       const pi = createMockExtensionAPI();
       const ctx = createMockCommandContext({ isIdle: true });
       const state = new SupervisorStateManager(pi);
 
-      // Simulate the command handler behavior
       const trimmed = 'Implement JWT authentication';
       state.start(trimmed, 'anthropic', 'claude-haiku');
 
-      // Kickstart behavior
       if (ctx.isIdle()) {
         pi.sendUserMessage(`Please start working on this goal: ${trimmed}`, {
           deliverAs: 'followUp',
@@ -219,7 +212,6 @@ describe('Supervise command kickstart behavior', () => {
       const ctx = createMockCommandContext({ isIdle: true });
       const state = new SupervisorStateManager(pi);
 
-      // Simulate inferred goal behavior
       const inferred = 'Fix the memory leak in handler';
       state.start(inferred, 'anthropic', 'claude-haiku');
 
@@ -240,7 +232,6 @@ describe('Supervise command kickstart behavior', () => {
       const ctx = createMockCommandContext({ isIdle: true });
       const state = new SupervisorStateManager(pi);
 
-      // Simulate tool behavior
       const outcome = 'Refactor database layer';
       state.start(outcome, 'anthropic', 'claude-haiku');
 
@@ -260,13 +251,12 @@ describe('Supervise command kickstart behavior', () => {
   describe('when agent is busy', () => {
     it('should NOT kickstart when running /supervise and agent is working', async () => {
       const pi = createMockExtensionAPI();
-      const ctx = createMockCommandContext({ isIdle: false }); // Agent is busy
+      const ctx = createMockCommandContext({ isIdle: false });
       const state = new SupervisorStateManager(pi);
 
       const trimmed = 'Implement feature X';
       state.start(trimmed, 'anthropic', 'claude-haiku');
 
-      // Kickstart behavior (should NOT trigger)
       if (ctx.isIdle()) {
         pi.sendUserMessage(`Please start working on this goal: ${trimmed}`, {
           deliverAs: 'followUp',
@@ -300,19 +290,15 @@ describe('Supervise command kickstart behavior', () => {
       const ctx = createMockCommandContext({ isIdle: true });
       const state = new SupervisorStateManager(pi);
 
-      // First start supervision
       state.start('Original goal', 'anthropic', 'claude-haiku');
 
-      // Reset mock to track only append behavior
       pi.sendUserMessage.mockClear();
 
-      // Now simulate append (when supervision is already active)
       const trimmed = 'Additional requirement';
       const existing = state.getState();
       const appendedOutcome = `${existing!.outcome}. Additionally: ${trimmed}`;
       state.updateOutcome(appendedOutcome);
 
-      // Append behavior does NOT kickstart - it just updates the goal
       expect(pi.sendUserMessage).not.toHaveBeenCalled();
       expect(state.getState()!.outcome).toBe('Original goal. Additionally: Additional requirement');
     });
@@ -329,14 +315,12 @@ describe('Supervise command kickstart behavior', () => {
       const appendedOutcome = `${existing!.outcome}. Additionally: ${trimmed}`;
       state.updateOutcome(appendedOutcome);
 
-      // In real implementation, this would call ctx.ui.notify
-      // We verify the outcome was updated
       expect(state.getState()!.outcome).toContain('Additionally: More work');
     });
   });
 
   describe('edge cases', () => {
-    it('should handle kickstart with very long goals (truncated in UI but full in message)', async () => {
+    it('should handle kickstart with very long goals', async () => {
       const pi = createMockExtensionAPI();
       const ctx = createMockCommandContext({ isIdle: true });
       const state = new SupervisorStateManager(pi);
@@ -350,7 +334,6 @@ describe('Supervise command kickstart behavior', () => {
         });
       }
 
-      // Full goal should be in the kickstart message
       expect(pi.sendUserMessage).toHaveBeenCalledWith(
         `Please start working on this goal: ${longGoal}`,
         { deliverAs: 'followUp' }
@@ -361,14 +344,13 @@ describe('Supervise command kickstart behavior', () => {
       const pi = createMockExtensionAPI();
       const ctx = {
         ...createMockCommandContext(),
-        isIdle: vi.fn().mockReturnValue(undefined), // falsy value
+        isIdle: vi.fn().mockReturnValue(undefined),
       };
       const state = new SupervisorStateManager(pi);
 
       const trimmed = 'Test goal';
       state.start(trimmed, 'anthropic', 'claude-haiku');
 
-      // Should not kickstart when isIdle returns falsy
       if (ctx.isIdle()) {
         pi.sendUserMessage(`Please start working on this goal: ${trimmed}`, {
           deliverAs: 'followUp',

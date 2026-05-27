@@ -3,12 +3,7 @@
  */
 
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
-import type {
-  SupervisorState,
-  SupervisorIntervention,
-  ConversationMessage,
-  ReframeTier,
-} from '../types.js';
+import type { SupervisorState, SupervisorIntervention, ReframeTier } from '../types.js';
 import { detectIneffectivePattern, type IneffectivePattern } from './patterns.js';
 import {
   getReframeTier,
@@ -18,8 +13,8 @@ import {
 
 const ENTRY_TYPE = 'supervisor-state';
 
-export const DEFAULT_PROVIDER: string | null = null;
-export const DEFAULT_MODEL_ID: string | null = null;
+/** Mid-run safety valve threshold */
+const MID_RUN_THRESHOLD = 8;
 
 export class SupervisorStateManager {
   private state: SupervisorState | null = null;
@@ -37,12 +32,10 @@ export class SupervisorStateManager {
       modelId,
       interventions: [],
       startedAt: Date.now(),
-      turnCount: 0,
-      snapshotBuffer: [],
-      lastAnalyzedTurn: -1,
-      justSteered: false,
       reframeTier: 0,
-      lastSteerTurn: -1,
+      idleSteers: 0,
+      midRunCounter: 0,
+      justSteered: false,
     };
     this.persist();
   }
@@ -50,7 +43,7 @@ export class SupervisorStateManager {
   stop(): void {
     if (!this.state) return;
     this.state.active = false;
-    this.state.outcome = ''; // Clear the goal so /supervise starts fresh, not in append mode
+    this.state.outcome = '';
     this.persist();
   }
 
@@ -66,7 +59,7 @@ export class SupervisorStateManager {
     if (!this.state) return;
     this.state.interventions.push(intervention);
     this.state.justSteered = true;
-    this.state.lastSteerTurn = intervention.turnCount;
+    this.state.midRunCounter = 0;
     this.persist();
   }
 
@@ -75,9 +68,35 @@ export class SupervisorStateManager {
     this.state.justSteered = false;
   }
 
-  incrementTurnCount(): void {
+  incrementIdleSteers(): void {
     if (!this.state) return;
-    this.state.turnCount++;
+    this.state.idleSteers = (this.state.idleSteers ?? 0) + 1;
+  }
+
+  resetIdleSteers(): void {
+    if (!this.state) return;
+    this.state.idleSteers = 0;
+  }
+
+  getIdleSteers(): number {
+    return this.state?.idleSteers ?? 0;
+  }
+
+  incrementMidRunCounter(): void {
+    if (!this.state) return;
+    this.state.midRunCounter = (this.state.midRunCounter ?? 0) + 1;
+  }
+
+  resetMidRunCounter(): void {
+    if (!this.state) return;
+    this.state.midRunCounter = 0;
+  }
+
+  shouldAnalyzeMidRun(): boolean {
+    if (!this.state) return false;
+    if (this.state.justSteered) return true;
+    if ((this.state.midRunCounter ?? 0) >= MID_RUN_THRESHOLD) return true;
+    return false;
   }
 
   setModel(provider: string, modelId: string): void {
@@ -91,24 +110,6 @@ export class SupervisorStateManager {
     if (!this.state) return;
     this.state.outcome = outcome;
     this.persist();
-  }
-
-  updateSnapshotBuffer(messages: ConversationMessage[]): void {
-    if (!this.state) return;
-    this.state.snapshotBuffer = messages;
-    this.state.lastAnalyzedTurn = this.state.turnCount;
-  }
-
-  getSnapshotBuffer(): ConversationMessage[] {
-    return this.state?.snapshotBuffer ?? [];
-  }
-
-  shouldAnalyzeMidRun(turnIndex: number): boolean {
-    if (!this.state) return false;
-    // Check if we just steered (verify it worked), or safety valve every 8th turn
-    if (this.state.justSteered) return true;
-    if (turnIndex > 0 && turnIndex % 8 === 0) return true;
-    return false;
   }
 
   // ---- Reframe tier management ----
@@ -133,25 +134,22 @@ export class SupervisorStateManager {
   // ---- Pattern detection ----
 
   detectIneffectivePattern(): IneffectivePattern {
-    if (!this.state) return { detected: false, similarCount: 0, turnsSinceLastSteer: 0 };
+    if (!this.state) return { detected: false, similarCount: 0, secondsSinceLastSteer: 0 };
     return detectIneffectivePattern(this.state);
   }
 
   // ---- Persistence ----
 
-  /** Restore state from session entries (finds the most recent supervisor-state entry). */
   loadFromSession(ctx: ExtensionContext): void {
     const entries = ctx.sessionManager.getBranch();
     for (let i = entries.length - 1; i >= 0; i--) {
       const entry = entries[i];
       if (entry.type === 'custom' && (entry as any).customType === ENTRY_TYPE) {
         const loaded = (entry as any).data as SupervisorState;
-        // Restore ephemeral fields
         this.state = {
           ...loaded,
-          snapshotBuffer: [],
-          lastAnalyzedTurn: -1,
           justSteered: false,
+          midRunCounter: 0,
         };
         return;
       }
@@ -159,11 +157,9 @@ export class SupervisorStateManager {
     this.state = null;
   }
 
-  /** Persist current state to session (public for compaction handler). */
   persist(): void {
     if (!this.state) return;
-    // Don't persist ephemeral fields that are runtime-only
-    const { snapshotBuffer, lastAnalyzedTurn, justSteered, ...toPersist } = this.state;
+    const { justSteered, midRunCounter, ...toPersist } = this.state;
     this.pi.appendEntry(ENTRY_TYPE, toPersist);
   }
 }

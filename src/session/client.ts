@@ -10,8 +10,7 @@ import { parseDecision, safeContinue } from './response-parser.js';
 // Global session manager (one per supervision goal)
 let activeSession: SupervisorSession | null = null;
 
-/** Get or create the global supervisor session. */
-export function getOrCreateSession(): SupervisorSession {
+function getOrCreateSession(): SupervisorSession {
   if (!activeSession) {
     activeSession = new SupervisorSession();
   }
@@ -45,5 +44,3 @@ export async function callSupervisorModel(
   if (text === null) return safeContinue('Model call failed');
   return parseDecision(text);
 }
-
-export { SupervisorSession };

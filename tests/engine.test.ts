@@ -20,11 +20,8 @@ vi.mock('node:os', async () => {
 import { existsSync, readFileSync } from 'node:fs';
 import {
   loadSystemPrompt,
-  SNAPSHOT_LIMIT,
-  updateSnapshot,
   buildUserPrompt,
   getReframeGuidance,
-  extractMetrics,
   inferOutcome,
 } from '../src/core/index.js';
 import { SupervisorSession } from '../src/session/supervisor-session.js';
@@ -69,7 +66,7 @@ describe('loadSystemPrompt', () => {
   });
 
   it('prefers project over global', () => {
-    vi.mocked(existsSync).mockReturnValue(true); // Both exist
+    vi.mocked(existsSync).mockReturnValue(true);
     vi.mocked(readFileSync).mockReturnValue('Project wins');
 
     const result = loadSystemPrompt('/test/cwd');
@@ -78,12 +75,12 @@ describe('loadSystemPrompt', () => {
   });
 
   it('built-in prompt includes cheating prevention section', () => {
-    vi.mocked(existsSync).mockReturnValue(false); // Neither project nor global exists
+    vi.mocked(existsSync).mockReturnValue(false);
 
     const result = loadSystemPrompt('/test/cwd');
 
     expect(result.source).toBe('built-in');
-    expect(result.prompt).toContain('═══ CHEATING PREVENTION ═══');
+    expect(result.prompt).toContain('CHEATING PREVENTION');
     expect(result.prompt).toContain('Unverified Claims');
     expect(result.prompt).toContain('Test Manipulation');
     expect(result.prompt).toContain('Metric Gaming');
@@ -92,74 +89,17 @@ describe('loadSystemPrompt', () => {
   });
 
   it('built-in prompt includes ASI loop section', () => {
-    vi.mocked(existsSync).mockReturnValue(false); // Neither project nor global exists
+    vi.mocked(existsSync).mockReturnValue(false);
 
     const result = loadSystemPrompt('/test/cwd');
 
     expect(result.source).toBe('built-in');
-    expect(result.prompt).toContain('═══ CLOSING THE ASI LOOP ═══');
+    expect(result.prompt).toContain('CLOSING THE ASI LOOP');
     expect(result.prompt).toContain(
       'ASI (Actionable Side Information) is your memory across turns'
     );
     expect(result.prompt).toContain('READ your past ASI entries');
     expect(result.prompt).toContain('REQUIRED when steering');
-  });
-});
-
-describe('SNAPSHOT_LIMIT', () => {
-  it('is set to 6 messages', () => {
-    expect(SNAPSHOT_LIMIT).toBe(6);
-  });
-});
-
-describe('updateSnapshot', () => {
-  it('returns existing buffer when turn already analyzed', () => {
-    const mockCtx = {
-      sessionManager: {
-        getBranch: () => [],
-      },
-    } as any;
-
-    const state: SupervisorState = {
-      active: true,
-      outcome: 'Test',
-      provider: 'anthropic',
-      modelId: 'claude',
-      interventions: [],
-      startedAt: Date.now(),
-      turnCount: 5,
-      snapshotBuffer: [{ role: 'user', content: 'Old' }],
-      lastAnalyzedTurn: 5, // Already analyzed this turn
-    };
-
-    const result = updateSnapshot(mockCtx, state);
-
-    // Should return existing buffer limited to SNAPSHOT_LIMIT
-    expect(result).toEqual([{ role: 'user', content: 'Old' }]);
-  });
-
-  it('updates lastAnalyzedTurn after building snapshot', () => {
-    const mockCtx = {
-      sessionManager: {
-        getBranch: () => [],
-      },
-    } as any;
-
-    const state: SupervisorState = {
-      active: true,
-      outcome: 'Test',
-      provider: 'anthropic',
-      modelId: 'claude',
-      interventions: [],
-      startedAt: Date.now(),
-      turnCount: 3,
-      snapshotBuffer: [],
-      lastAnalyzedTurn: -1,
-    };
-
-    updateSnapshot(mockCtx, state);
-
-    expect(state.lastAnalyzedTurn).toBe(3);
   });
 });
 
@@ -173,7 +113,7 @@ describe('getReframeGuidance', () => {
     const result = getReframeGuidance(0, {
       detected: true,
       similarCount: 2,
-      turnsSinceLastSteer: 3,
+      secondsSinceLastSteer: 90,
     });
     expect(result).toContain('INEFFECTIVE PATTERN DETECTED');
   });
@@ -210,18 +150,18 @@ describe('getReframeGuidance', () => {
     const result = getReframeGuidance(2, {
       detected: true,
       similarCount: 2,
-      turnsSinceLastSteer: 3,
+      secondsSinceLastSteer: 90,
     });
     expect(result).toContain('INEFFECTIVE PATTERN DETECTED');
     expect(result).toContain('Last 2 steering messages');
-    expect(result).toContain('no progress in 3 turns');
+    expect(result).toContain('90s since last steer');
   });
 
   it('does not include pattern warning when not detected', () => {
     const result = getReframeGuidance(2, {
       detected: false,
       similarCount: 1,
-      turnsSinceLastSteer: 1,
+      secondsSinceLastSteer: 10,
     });
     expect(result).not.toContain('INEFFECTIVE PATTERN DETECTED');
   });
@@ -236,11 +176,10 @@ describe('buildUserPrompt', () => {
       modelId: 'claude',
       interventions: [],
       startedAt: Date.now(),
-      turnCount: 1,
       reframeTier: 2,
     };
 
-    const result = buildUserPrompt(state, [], true);
+    const result = buildUserPrompt(state, '[Session Goal]\n- Do stuff', true);
     expect(result).toContain('REFRAME TIER 2');
     expect(result).toContain('SUBGOAL');
   });
@@ -253,11 +192,10 @@ describe('buildUserPrompt', () => {
       modelId: 'claude',
       interventions: [],
       startedAt: Date.now(),
-      turnCount: 1,
       reframeTier: 0,
     };
 
-    const result = buildUserPrompt(state, [], true);
+    const result = buildUserPrompt(state, '[Session Goal]\n- Do stuff', true);
     expect(result).not.toContain('REFRAME TIER');
   });
 
@@ -267,19 +205,16 @@ describe('buildUserPrompt', () => {
       outcome: 'Implement auth',
       provider: 'anthropic',
       modelId: 'claude',
-      interventions: [
-        { turnCount: 1, message: 'Focus on auth', reasoning: 'Test', timestamp: Date.now() },
-      ],
+      interventions: [{ message: 'Focus on auth', reasoning: 'Test', timestamp: Date.now() }],
       startedAt: Date.now(),
-      turnCount: 4,
       reframeTier: 1,
     };
 
-    const ineffectivePattern = { detected: true, similarCount: 1, turnsSinceLastSteer: 3 };
-    const result = buildUserPrompt(state, [], true, ineffectivePattern);
+    const ineffectivePattern = { detected: true, similarCount: 1, secondsSinceLastSteer: 90 };
+    const result = buildUserPrompt(state, '[Session Goal]\n- Do stuff', true, ineffectivePattern);
 
     expect(result).toContain('INEFFECTIVE PATTERN DETECTED');
-    expect(result).toContain('no progress in 3 turns');
+    expect(result).toContain('90s since last steer');
   });
 
   it('includes outcome and agent status', () => {
@@ -290,10 +225,9 @@ describe('buildUserPrompt', () => {
       modelId: 'claude',
       interventions: [],
       startedAt: Date.now(),
-      turnCount: 1,
     };
 
-    const result = buildUserPrompt(state, [], true);
+    const result = buildUserPrompt(state, '[Session Goal]\n- Do stuff', true);
     expect(result).toContain('DESIRED OUTCOME:');
     expect(result).toContain('Build API');
     expect(result).toContain('AGENT STATUS: IDLE');
@@ -307,14 +241,13 @@ describe('buildUserPrompt', () => {
       modelId: 'claude',
       interventions: [],
       startedAt: Date.now(),
-      turnCount: 1,
     };
 
-    const result = buildUserPrompt(state, [], false);
+    const result = buildUserPrompt(state, '[Session Goal]\n- Do stuff', false);
     expect(result).toContain('AGENT STATUS: WORKING');
   });
 
-  it('includes conversation messages in prompt', () => {
+  it('includes structured conversation context', () => {
     const state: SupervisorState = {
       active: true,
       outcome: 'Build API',
@@ -322,17 +255,14 @@ describe('buildUserPrompt', () => {
       modelId: 'claude',
       interventions: [],
       startedAt: Date.now(),
-      turnCount: 1,
     };
 
-    const snapshot = [
-      { role: 'user' as const, content: 'Hello' },
-      { role: 'assistant' as const, content: 'Hi there' },
-    ];
-
-    const result = buildUserPrompt(state, snapshot, true);
-    expect(result).toContain('USER: Hello');
-    expect(result).toContain('ASSISTANT: Hi there');
+    const contextText =
+      '[Session Goal]\n- Build auth\n[Outstanding Context]\n- [ERROR] build failed';
+    const result = buildUserPrompt(state, contextText, true);
+    expect(result).toContain('STRUCTURED CONVERSATION CONTEXT:');
+    expect(result).toContain('[Session Goal]');
+    expect(result).toContain('Build auth');
   });
 
   it('includes intervention history', () => {
@@ -341,16 +271,13 @@ describe('buildUserPrompt', () => {
       outcome: 'Build API',
       provider: 'anthropic',
       modelId: 'claude',
-      interventions: [
-        { turnCount: 1, message: 'Focus on X', reasoning: 'Drift', timestamp: 123456 },
-      ],
+      interventions: [{ message: 'Focus on X', reasoning: 'Drift', timestamp: 123456 }],
       startedAt: Date.now(),
-      turnCount: 2,
     };
 
-    const result = buildUserPrompt(state, [], true);
+    const result = buildUserPrompt(state, '', true);
     expect(result).toContain('YOUR INTERVENTION HISTORY (with ASI observations):');
-    expect(result).toContain('[1] Turn 1:');
+    expect(result).toContain('[1]');
     expect(result).toContain('Focus on X');
   });
 
@@ -362,7 +289,6 @@ describe('buildUserPrompt', () => {
       modelId: 'claude',
       interventions: [
         {
-          turnCount: 1,
           message: 'Focus on tests',
           reasoning: 'Drift',
           timestamp: 123456,
@@ -373,10 +299,9 @@ describe('buildUserPrompt', () => {
         },
       ],
       startedAt: Date.now(),
-      turnCount: 2,
     };
 
-    const result = buildUserPrompt(state, [], true);
+    const result = buildUserPrompt(state, '', true);
     expect(result).toContain('ASI {');
     expect(result).toContain('why_stuck: "agent refactoring without tests"');
     expect(result).toContain('strategy_used: "directive"');
@@ -390,21 +315,18 @@ describe('buildUserPrompt', () => {
       modelId: 'claude',
       interventions: [
         {
-          turnCount: 1,
           message: 'Focus on tests',
           reasoning: 'Drift',
           timestamp: 123456,
           asi: { suspicious_claim: true, pattern: 'unverified' },
         },
         {
-          turnCount: 2,
           message: 'Verify the output',
           reasoning: 'Contradiction',
           timestamp: 123457,
           asi: { suspicious_claim: true, pattern: 'contradicted' },
         },
         {
-          turnCount: 3,
           message: 'Show proof',
           reasoning: 'Unverified',
           timestamp: 123458,
@@ -412,10 +334,9 @@ describe('buildUserPrompt', () => {
         },
       ],
       startedAt: Date.now(),
-      turnCount: 4,
     };
 
-    const result = buildUserPrompt(state, [], true);
+    const result = buildUserPrompt(state, '', true);
     expect(result).toContain('ASI PATTERN SUMMARY');
     expect(result).toContain('Pattern seen 2x: "suspicious_claim"');
     expect(result).toContain('⚠️ Previous interventions flagged suspicious claims');
@@ -429,21 +350,18 @@ describe('buildUserPrompt', () => {
       modelId: 'claude',
       interventions: [
         {
-          turnCount: 1,
           message: 'Focus on tests',
           reasoning: 'Drift',
           timestamp: 123456,
           asi: { claim_status: 'contradicted_by_tool_output' },
         },
         {
-          turnCount: 2,
           message: 'Verify the output',
           reasoning: 'Contradiction',
           timestamp: 123457,
           asi: { claim_status: 'unverified' },
         },
         {
-          turnCount: 3,
           message: 'Show proof',
           reasoning: 'Unverified',
           timestamp: 123458,
@@ -451,10 +369,9 @@ describe('buildUserPrompt', () => {
         },
       ],
       startedAt: Date.now(),
-      turnCount: 4,
     };
 
-    const result = buildUserPrompt(state, [], true);
+    const result = buildUserPrompt(state, '', true);
     expect(result).toContain('ASI PATTERN SUMMARY');
     expect(result).toContain('⚠️ 3 interventions involved unverified/contradicted claims');
     expect(result).toContain('agent has pattern of unreliable reporting');
@@ -468,7 +385,6 @@ describe('buildUserPrompt', () => {
       modelId: 'claude',
       interventions: [
         {
-          turnCount: 1,
           message: 'Check for cheating',
           reasoning: 'Suspicious',
           timestamp: 123456,
@@ -476,10 +392,9 @@ describe('buildUserPrompt', () => {
         },
       ],
       startedAt: Date.now(),
-      turnCount: 2,
     };
 
-    const result = buildUserPrompt(state, [], true);
+    const result = buildUserPrompt(state, '', true);
     expect(result).toContain('ASI PATTERN SUMMARY');
     expect(result).toContain('⚠️ Previous interventions flagged suspicious claims');
   });
@@ -492,26 +407,21 @@ describe('buildUserPrompt', () => {
       modelId: 'claude',
       interventions: [
         {
-          turnCount: 1,
           message: 'Focus on X',
           reasoning: 'Drift',
           timestamp: 123456,
-          // No ASI
         },
       ],
       startedAt: Date.now(),
-      turnCount: 2,
     };
 
-    const result = buildUserPrompt(state, [], true);
-    // Should not show ASI section for empty ASI
-    expect(result).toContain('[1] Turn 1: "Focus on X"');
+    const result = buildUserPrompt(state, '', true);
+    expect(result).toContain('[1] "Focus on X"');
     expect(result).not.toContain('ASI {}');
-    // No ASI summary when no patterns
     expect(result).not.toContain('ASI PATTERN SUMMARY');
   });
 
-  it('does not include metrics section when only natural language text', () => {
+  it('shows fallback when no context available', () => {
     const state: SupervisorState = {
       active: true,
       outcome: 'Build API',
@@ -519,91 +429,28 @@ describe('buildUserPrompt', () => {
       modelId: 'claude',
       interventions: [],
       startedAt: Date.now(),
-      turnCount: 1,
     };
 
-    const snapshot = [
-      { role: 'assistant' as const, content: 'Coverage is now 87% and tests passing' },
-    ];
-
-    const result = buildUserPrompt(state, snapshot, true);
-    // The LLM reads raw text; no metrics section inserted for natural language
-    expect(result).not.toContain('METRICS DETECTED IN CONVERSATION:');
-  });
-
-  it('includes METRIC section when explicit markers present', () => {
-    const state: SupervisorState = {
-      active: true,
-      outcome: 'Build API',
-      provider: 'anthropic',
-      modelId: 'claude',
-      interventions: [],
-      startedAt: Date.now(),
-      turnCount: 1,
-    };
-
-    const snapshot = [
-      { role: 'assistant' as const, content: 'METRIC coverage=87\nAll tests passing' },
-    ];
-
-    const result = buildUserPrompt(state, snapshot, true);
-    expect(result).toContain('METRICS DETECTED IN CONVERSATION:');
-    expect(result).toContain('coverage: 87');
-  });
-});
-
-describe('extractMetrics', () => {
-  it('extracts autoresearch-style METRIC lines', () => {
-    const text = 'METRIC coverage=87.5\nMETRIC tests=42';
-    const result = extractMetrics(text);
-    expect(result).toEqual({ coverage: 87.5, tests: 42 });
-  });
-
-  it('returns empty object when no metrics found', () => {
-    const text = 'Coverage is now 87% and tests passing';
-    const result = extractMetrics(text);
-    expect(result).toEqual({});
-  });
-
-  it('returns empty object for regular conversation', () => {
-    const text = 'Just some regular conversation without METRIC markers';
-    const result = extractMetrics(text);
-    expect(result).toEqual({});
-  });
-
-  it('handles decimal values in METRIC lines', () => {
-    const text = 'METRIC accuracy=94.73';
-    const result = extractMetrics(text);
-    expect(result.accuracy).toBe(94.73);
-  });
-
-  it('ignores percentage patterns without METRIC marker', () => {
-    // The LLM supervisor reads the raw text - no need for us to parse
-    const text = 'Test coverage: 87% and everything looks good';
-    const result = extractMetrics(text);
-    expect(result).toEqual({});
+    const result = buildUserPrompt(state, '', true);
+    expect(result).toContain('No conversation context available');
   });
 });
 
 describe('inferOutcome', () => {
-  // Spy on SupervisorSession prototype methods
   let ensureStartedSpy: ReturnType<typeof vi.spyOn>;
   let promptSpy: ReturnType<typeof vi.spyOn>;
   let disposeSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
-    // Create spies on the prototype methods
     ensureStartedSpy = vi.spyOn(SupervisorSession.prototype, 'ensureStarted');
     promptSpy = vi.spyOn(SupervisorSession.prototype, 'prompt');
     disposeSpy = vi.spyOn(SupervisorSession.prototype, 'dispose');
 
-    // Set default success behavior
     ensureStartedSpy.mockResolvedValue(true);
     promptSpy.mockResolvedValue('Build auth system');
   });
 
   afterEach(() => {
-    // Restore original implementations
     ensureStartedSpy.mockRestore();
     promptSpy.mockRestore();
     disposeSpy.mockRestore();
@@ -629,7 +476,7 @@ describe('inferOutcome', () => {
         getBranch: () => [{ type: 'message', message: { role: 'user', content: 'Hello' } }],
       },
       modelRegistry: {
-        find: () => null, // Model not found
+        find: () => null,
       },
     } as any;
 
@@ -701,7 +548,7 @@ describe('inferOutcome', () => {
 
     const result = await inferOutcome(mockCtx, 'anthropic', 'claude');
 
-    expect(result).toBe('Fix the bug in the handler'); // No quotes, newlines replaced with spaces
+    expect(result).toBe('Fix the bug in the handler');
     expect(result.length).toBeLessThanOrEqual(200);
   });
 
@@ -766,7 +613,6 @@ describe('inferOutcome', () => {
 
     await inferOutcome(mockCtx, 'anthropic', 'claude');
 
-    // Verify the system prompt passed to ensureStarted contains goal extraction content
     expect(ensureStartedSpy).toHaveBeenCalledWith(
       mockCtx,
       'anthropic',

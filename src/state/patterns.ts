@@ -1,5 +1,6 @@
 /**
  * Pattern detection for ineffective steering interventions.
+ * Uses timestamps from intervention records instead of turn counting.
  */
 
 import type { SupervisorIntervention, SupervisorState } from '../types.js';
@@ -7,29 +8,35 @@ import type { SupervisorIntervention, SupervisorState } from '../types.js';
 export interface IneffectivePattern {
   detected: boolean;
   similarCount: number;
-  turnsSinceLastSteer: number;
+  secondsSinceLastSteer: number;
 }
+
+/** Stagnation threshold: no steer in this many seconds suggests ineffectiveness */
+const STAGNATION_SECS = 60;
 
 /**
  * Detect if recent interventions show a pattern of ineffectiveness.
- * Returns similarity info if the last 2+ steering messages are similar.
+ * Returns similarity info if the last 2+ steering messages are similar,
+ * or if stagnation is detected (no new steer in a while despite active supervision).
  */
 export function detectIneffectivePattern(
-  state: Pick<SupervisorState, 'interventions' | 'turnCount' | 'lastSteerTurn'>
+  state: Pick<SupervisorState, 'interventions' | 'startedAt'>
 ): IneffectivePattern {
-  const turnsSinceLastSteer = state.turnCount - (state.lastSteerTurn ?? 0);
+  const now = Date.now();
+  const lastSteerTs =
+    state.interventions.length > 0
+      ? state.interventions[state.interventions.length - 1].timestamp
+      : state.startedAt;
+  const secondsSinceLastSteer = Math.round((now - lastSteerTs) / 1000);
 
-  // Check stagnation: no progress after 3+ turns since last steer
-  const stagnating =
-    state.lastSteerTurn !== undefined && state.lastSteerTurn >= 0 && turnsSinceLastSteer >= 3;
+  // Stagnation: no new steer action in a while
+  const stagnating = secondsSinceLastSteer >= STAGNATION_SECS;
 
   const recent = state.interventions.slice(-3);
   if (recent.length < 2) {
-    // Still detect stagnation even with fewer than 2 interventions
-    return { detected: stagnating, similarCount: recent.length, turnsSinceLastSteer };
+    return { detected: stagnating, similarCount: recent.length, secondsSinceLastSteer };
   }
 
-  // Simple similarity: check if messages share common keywords or have similar length
   const messages = recent.map((iv) => iv.message.toLowerCase());
   let similarCount = 1;
 
@@ -39,22 +46,18 @@ export function detectIneffectivePattern(
     }
   }
 
-  // Detected if 2+ recent messages are similar OR stagnating (no progress after 3+ turns)
   const detected = similarCount >= 2 || stagnating;
 
-  return { detected, similarCount, turnsSinceLastSteer };
+  return { detected, similarCount, secondsSinceLastSteer };
 }
 
 function areMessagesSimilar(a: string, b: string): boolean {
-  // Simple similarity heuristics
   const normalize = (s: string) => s.replace(/[^\w\s]/g, '').trim();
   const normA = normalize(a);
   const normB = normalize(b);
 
-  // Exact match after normalization
   if (normA === normB) return true;
 
-  // Check for common directive keywords
   const directiveWords = [
     'focus',
     'implement',
@@ -69,11 +72,9 @@ function areMessagesSimilar(a: string, b: string): boolean {
   const aDirectives = directiveWords.filter((w) => normA.includes(w));
   const bDirectives = directiveWords.filter((w) => normB.includes(w));
 
-  // If they share 2+ directive words, likely similar
   const commonDirectives = aDirectives.filter((w) => bDirectives.includes(w));
   if (commonDirectives.length >= 2) return true;
 
-  // Length similarity (within 30%)
   const lenRatio = Math.min(normA.length, normB.length) / Math.max(normA.length, normB.length);
   if (lenRatio > 0.7 && commonDirectives.length >= 1) return true;
 

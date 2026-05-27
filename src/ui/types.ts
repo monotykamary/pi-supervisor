@@ -6,10 +6,10 @@ import type { SupervisorIntervention } from '../types.js';
 
 export type WidgetAction =
   | { type: 'watching'; reframeTier?: number }
-  | { type: 'analyzing'; turn: number; reframeTier?: number; thinking?: string }
+  | { type: 'analyzing'; reframeTier?: number; thinking?: string }
   | { type: 'steering'; message: string; reframeTier?: number }
   | { type: 'done'; reframeTier?: number }
-  | { type: 'waiting'; message: string; turn: number; reframeTier?: number }
+  | { type: 'waiting'; message: string; reframeTier?: number }
   | { type: 'inferring' };
 
 /** Internal UI state for the widget */

@@ -1,12 +1,16 @@
 /**
- * Main analyzer - orchestrates supervisor analysis.
+ * Main analyzer - orchestrates supervisor analysis using compaction-based context.
  */
 
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 import type { SteeringDecision, SupervisorState } from '../types.js';
 import { callSupervisorModel } from '../session/client.js';
 import { loadSystemPrompt } from './prompt-loader.js';
-import { updateSnapshot } from './snapshot-builder.js';
+import {
+  buildCompactionSummary,
+  extractMessages,
+  formatForSupervisor,
+} from '../compaction/index.js';
 import { buildUserPrompt } from './prompt-builder.js';
 
 /**
@@ -17,15 +21,18 @@ export async function analyze(
   ctx: ExtensionContext,
   state: SupervisorState,
   agentIsIdle: boolean,
-  ineffectivePattern?: { detected: boolean; similarCount: number; turnsSinceLastSteer: number },
+  ineffectivePattern?: { detected: boolean; similarCount: number; secondsSinceLastSteer: number },
   signal?: AbortSignal,
   onDelta?: (accumulated: string) => void
 ): Promise<SteeringDecision> {
   const { prompt: systemPrompt } = loadSystemPrompt(ctx.cwd);
 
-  // Update snapshot incrementally
-  const snapshot = updateSnapshot(ctx, state);
-  const userPrompt = buildUserPrompt(state, snapshot, agentIsIdle, ineffectivePattern);
+  // Build structured compaction summary from current branch
+  const messages = extractMessages(ctx);
+  const summary = buildCompactionSummary(messages);
+  const contextText = formatForSupervisor(summary);
+
+  const userPrompt = buildUserPrompt(state, contextText, agentIsIdle, ineffectivePattern);
 
   try {
     return await callSupervisorModel(

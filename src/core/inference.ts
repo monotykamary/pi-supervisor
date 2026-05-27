@@ -3,10 +3,11 @@
  */
 
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
-import type { ConversationMessage } from '../types.js';
 import { SupervisorSession } from '../session/supervisor-session.js';
-import { extractAllBlocks, extractText, extractAssistantText } from './content-extractor.js';
-import { SNAPSHOT_LIMIT } from './snapshot-builder.js';
+import { extractMessages } from '../compaction/index.js';
+import { normalize } from '../compaction/normalize.js';
+import { filterNoise } from '../compaction/filter-noise.js';
+import { buildBriefSections, stringifyBrief } from '../compaction/brief.js';
 
 /** System prompt for inferring an outcome from conversation history. */
 const INFER_OUTCOME_SYSTEM_PROMPT = `You are a goal extraction assistant. Your task is to analyze a conversation between a user and a coding AI assistant, and extract the user's primary desired outcome or goal.
@@ -27,7 +28,7 @@ Respond with ONLY the outcome statement. No quotes, no markdown, no explanations
 
 /**
  * Infer a supervision outcome from the conversation history.
- * Returns null if inference fails or there's no conversation to analyze.
+ * Uses the compaction pipeline to build a structured summary for inference.
  */
 export async function inferOutcome(
   ctx: ExtensionContext,
@@ -35,73 +36,20 @@ export async function inferOutcome(
   modelId: string,
   signal?: AbortSignal
 ): Promise<string | null> {
-  // Build a focused snapshot for the immediate goal (last 6 messages = ~3 turns)
-  const entries = ctx.sessionManager.getBranch();
-  const messages: ConversationMessage[] = [];
+  const messages = extractMessages(ctx);
+  if (messages.length === 0) return null;
 
-  for (const entry of entries) {
-    // Capture regular messages
-    if (entry.type === 'message') {
-      const msg = (entry as any).message;
-      if (!msg) continue;
+  // Build a brief transcript for the inference prompt
+  const blocks = filterNoise(normalize(messages));
+  const sections = buildBriefSections(blocks);
+  const briefText = stringifyBrief(sections);
 
-      if (msg.role === 'user') {
-        const textContent = extractText(msg.content);
-        const allBlocks = extractAllBlocks(msg.content);
-        if (textContent || allBlocks.length > 0) {
-          messages.push({ role: 'user', content: textContent, blocks: allBlocks });
-        }
-      } else if (msg.role === 'assistant') {
-        const textContent = extractAssistantText(msg.content);
-        const allBlocks = extractAllBlocks(msg.content);
-        if (textContent || allBlocks.length > 0) {
-          messages.push({ role: 'assistant', content: textContent, blocks: allBlocks });
-        }
-      } else if (msg.role === 'tool') {
-        // Include tool results for context
-        const textContent = extractText(msg.content);
-        const allBlocks = extractAllBlocks(msg.content);
-        if (textContent || allBlocks.length > 0) {
-          messages.push({ role: 'tool_results', content: textContent, blocks: allBlocks });
-        }
-      }
-    }
+  if (!briefText) return null;
 
-    // Capture custom_message entries (often contain tool results)
-    if (entry.type === 'custom_message') {
-      const customMsg = entry as any;
-      const content = customMsg.content;
-
-      if (typeof content === 'string') {
-        messages.push({
-          role: 'tool_results',
-          content: content,
-          blocks: [{ type: 'text', text: content }],
-        });
-      } else if (Array.isArray(content)) {
-        const allBlocks = extractAllBlocks(content);
-        const textContent = content
-          .filter((b: any) => b.type === 'text')
-          .map((b: any) => b.text)
-          .join('\n');
-        messages.push({
-          role: 'tool_results',
-          content: textContent || `[${customMsg.customType}]`,
-          blocks: allBlocks,
-        });
-      }
-    }
-  }
-
-  const snapshot = messages.slice(-SNAPSHOT_LIMIT);
-  if (snapshot.length === 0) return null;
-
-  const conversationText = snapshot
-    .map(
-      (m) =>
-        `${m.role === 'user' ? 'USER' : m.role === 'assistant' ? 'ASSISTANT' : 'TOOL RESULTS'}: ${m.content}`
-    )
-    .join('\n\n---\n\n');
+  // Take last portion of the brief for context (keep it focused)
+  const lines = briefText.split('\n');
+  const recentLines = lines.slice(-40);
+  const conversationText = recentLines.join('\n');
 
   const userPrompt = `Analyze this conversation and extract the user's primary goal or desired outcome:
 
@@ -110,8 +58,6 @@ ${conversationText}
 What is the specific outcome the user is trying to achieve?`;
 
   try {
-    // Use fresh SupervisorSession (not callSupervisorModel) to avoid
-    // interfering with the global supervision session
     const session = new SupervisorSession();
     const started = await session.ensureStarted(
       ctx,
@@ -125,12 +71,11 @@ What is the specific outcome the user is trying to achieve?`;
     session.dispose();
 
     if (!result) return null;
-    // Clean up the result: remove quotes, trim whitespace, limit length
     return result
-      .replace(/^["']|["']$/g, '') // Remove surrounding quotes
-      .replace(/\n/g, ' ') // Replace newlines with spaces
+      .replace(/^["']|["']$/g, '')
+      .replace(/\n/g, ' ')
       .trim()
-      .slice(0, 200); // Hard limit at 200 chars
+      .slice(0, 200);
   } catch {
     return null;
   }

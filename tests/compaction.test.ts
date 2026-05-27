@@ -22,7 +22,6 @@ vi.mock('../src/session/client.js', () => ({
 import { analyze } from '../src/core/analyzer.js';
 import { updateUI } from '../src/ui/renderer.js';
 
-// Mock ExtensionAPI
 function createMockApi() {
   return {
     appendEntry: vi.fn(),
@@ -66,7 +65,6 @@ describe('SupervisorStateManager - compaction survival', () => {
       const api = createMockApi();
       const state = new SupervisorStateManager(api);
 
-      // Simulate a session with a supervisor-state entry
       const sessionEntries = [
         { type: 'message', message: { role: 'user', content: 'Hello' } },
         {
@@ -79,9 +77,7 @@ describe('SupervisorStateManager - compaction survival', () => {
             modelId: 'claude-haiku',
             interventions: [],
             startedAt: Date.now(),
-            turnCount: 5,
             reframeTier: 2,
-            lastSteerTurn: 3,
           },
         },
       ];
@@ -92,7 +88,6 @@ describe('SupervisorStateManager - compaction survival', () => {
       expect(state.isActive()).toBe(true);
       expect(state.getState()?.outcome).toBe('Test goal');
       expect(state.getState()?.provider).toBe('anthropic');
-      expect(state.getState()?.turnCount).toBe(5);
       expect(state.getReframeTier()).toBe(2);
     });
 
@@ -100,7 +95,6 @@ describe('SupervisorStateManager - compaction survival', () => {
       const api = createMockApi();
       const state = new SupervisorStateManager(api);
 
-      // Session with no supervisor-state entry (e.g., after compaction summarized it away)
       const sessionEntries = [
         { type: 'message', message: { role: 'user', content: 'Hello' } },
         { type: 'compaction', summary: 'Summary of old messages' },
@@ -126,12 +120,9 @@ describe('SupervisorStateManager - compaction survival', () => {
             outcome: 'Test goal',
             provider: 'anthropic',
             modelId: 'claude-haiku',
-            interventions: [{ turnCount: 1, message: 'Focus', reasoning: 'Test', timestamp: 123 }],
+            interventions: [{ message: 'Focus', reasoning: 'Test', timestamp: 123 }],
             startedAt: 1000,
-            turnCount: 3,
             reframeTier: 1,
-            lastSteerTurn: 2,
-            // Ephemeral fields should NOT be in persisted data
           },
         },
       ];
@@ -140,14 +131,12 @@ describe('SupervisorStateManager - compaction survival', () => {
       state.loadFromSession(ctx);
 
       // Ephemeral fields should be reset
-      expect(state.getState()?.snapshotBuffer).toEqual([]);
-      expect(state.getState()?.lastAnalyzedTurn).toBe(-1);
       expect(state.getState()?.justSteered).toBe(false);
+      expect(state.getState()?.midRunCounter).toBe(0);
 
       // Non-ephemeral fields should be preserved
-      expect(state.getState()?.turnCount).toBe(3);
       expect(state.getState()?.reframeTier).toBe(1);
-      expect(state.getState()?.lastSteerTurn).toBe(2);
+      expect(state.getState()?.interventions).toHaveLength(1);
     });
 
     it('uses the most recent supervisor-state entry when multiple exist', () => {
@@ -159,13 +148,12 @@ describe('SupervisorStateManager - compaction survival', () => {
           type: 'custom',
           customType: 'supervisor-state',
           data: {
-            active: false, // Old - stopped
+            active: false,
             outcome: 'Old goal',
             provider: 'openai',
             modelId: 'gpt-4o',
             interventions: [],
             startedAt: 1000,
-            turnCount: 10,
           },
         },
         { type: 'message', message: { role: 'user', content: 'Continue' } },
@@ -173,13 +161,12 @@ describe('SupervisorStateManager - compaction survival', () => {
           type: 'custom',
           customType: 'supervisor-state',
           data: {
-            active: true, // Newer - active
+            active: true,
             outcome: 'New goal',
             provider: 'anthropic',
             modelId: 'claude-haiku',
             interventions: [],
             startedAt: 2000,
-            turnCount: 3,
           },
         },
       ];
@@ -200,7 +187,6 @@ describe('SupervisorStateManager - compaction survival', () => {
 
       state.start('Test goal', 'anthropic', 'claude-haiku');
 
-      // start() calls persist() with initial state
       expect(api.appendEntry).toHaveBeenCalledWith(
         'supervisor-state',
         expect.objectContaining({
@@ -208,7 +194,6 @@ describe('SupervisorStateManager - compaction survival', () => {
           outcome: 'Test goal',
           provider: 'anthropic',
           modelId: 'claude-haiku',
-          turnCount: 0,
         })
       );
     });
@@ -218,16 +203,14 @@ describe('SupervisorStateManager - compaction survival', () => {
       const state = new SupervisorStateManager(api);
 
       state.start('Test goal', 'anthropic', 'claude-haiku');
-      state.updateSnapshotBuffer([{ role: 'user', content: 'Hello' }]);
-      state.clearJustSteered(); // justSteered would be false anyway
+      state.clearJustSteered();
 
       const lastCall = api.appendEntry.mock.calls[api.appendEntry.mock.calls.length - 1];
       const persistedData = lastCall[1];
 
       // Ephemeral fields should NOT be persisted
-      expect(persistedData.snapshotBuffer).toBeUndefined();
-      expect(persistedData.lastAnalyzedTurn).toBeUndefined();
       expect(persistedData.justSteered).toBeUndefined();
+      expect(persistedData.midRunCounter).toBeUndefined();
 
       // Non-ephemeral fields should be persisted
       expect(persistedData.outcome).toBe('Test goal');
@@ -238,15 +221,12 @@ describe('SupervisorStateManager - compaction survival', () => {
       const api = createMockApi();
       const state = new SupervisorStateManager(api);
 
-      // Start supervision
       state.start('Test goal', 'anthropic', 'claude-haiku');
       expect(api.appendEntry).toHaveBeenCalledTimes(1);
 
-      // Simulate compaction handler re-persisting
       state.persist();
       expect(api.appendEntry).toHaveBeenCalledTimes(2);
 
-      // Verify the re-persisted data is correct
       const lastCall = api.appendEntry.mock.calls[api.appendEntry.mock.calls.length - 1];
       expect(lastCall[0]).toBe('supervisor-state');
       expect(lastCall[1]).toMatchObject({
@@ -261,7 +241,6 @@ describe('SupervisorStateManager - compaction survival', () => {
       const api = createMockApi();
       const state = new SupervisorStateManager(api);
 
-      // persist() with no active state should not call appendEntry
       state.persist();
       expect(api.appendEntry).not.toHaveBeenCalled();
     });
@@ -271,16 +250,13 @@ describe('SupervisorStateManager - compaction survival', () => {
       const state = new SupervisorStateManager(api);
 
       state.start('Test goal', 'anthropic', 'claude-haiku');
-      state.incrementTurnCount();
       state.addIntervention({
-        turnCount: 1,
         message: 'Focus on tests',
         reasoning: 'Drift detected',
         timestamp: 1234567890,
         asi: { why_stuck: 'no tests', strategy_used: 'directive' },
       });
 
-      // Clear mock to test re-persist
       api.appendEntry.mockClear();
       state.persist();
 
@@ -299,27 +275,18 @@ describe('SupervisorStateManager - compaction survival', () => {
       const api = createMockApi();
       const state = new SupervisorStateManager(api);
 
-      // 1. Start supervision
       state.start('Implement auth', 'anthropic', 'claude-haiku');
-      // Manually increment and persist to simulate turn progression
-      state.incrementTurnCount();
-      state.incrementTurnCount();
       state.addIntervention({
-        turnCount: 2,
         message: 'Focus on JWT',
         reasoning: 'Drift',
         timestamp: 1000,
       });
       expect(state.isActive()).toBe(true);
-      expect(state.getState()?.turnCount).toBe(2);
+      expect(state.getState()?.interventions).toHaveLength(1);
 
-      // 2. Simulate compaction (session is reloaded with summary + recent entries)
-      // After compaction, the supervisor-state entry is now "old" and in the kept portion
-      // The extension's session_compact handler reloads state
       const postCompactionEntries = [
         { type: 'compaction', summary: 'Earlier conversation summarized' },
         { type: 'message', message: { role: 'user', content: 'Continue' } },
-        // The supervisor-state entry was in the kept portion (recent)
         {
           type: 'custom',
           customType: 'supervisor-state',
@@ -328,28 +295,20 @@ describe('SupervisorStateManager - compaction survival', () => {
             outcome: 'Implement auth',
             provider: 'anthropic',
             modelId: 'claude-haiku',
-            interventions: [
-              { turnCount: 2, message: 'Focus on JWT', reasoning: 'Drift', timestamp: 1000 },
-            ],
+            interventions: [{ message: 'Focus on JWT', reasoning: 'Drift', timestamp: 1000 }],
             startedAt: 500,
-            turnCount: 2,
             reframeTier: 0,
-            lastSteerTurn: 2,
           },
         },
       ];
 
-      // 3. Reload from session (simulating session_compact handler)
       const ctx = createMockContext(postCompactionEntries);
       state.loadFromSession(ctx);
 
-      // 4. Verify state was restored
       expect(state.isActive()).toBe(true);
       expect(state.getState()?.outcome).toBe('Implement auth');
-      expect(state.getState()?.turnCount).toBe(2);
       expect(state.getState()?.interventions).toHaveLength(1);
 
-      // 5. Re-persist to ensure future compactions find it in kept portion
       api.appendEntry.mockClear();
       state.persist();
 
@@ -358,7 +317,6 @@ describe('SupervisorStateManager - compaction survival', () => {
         expect.objectContaining({
           active: true,
           outcome: 'Implement auth',
-          turnCount: 2,
         })
       );
     });
@@ -367,63 +325,43 @@ describe('SupervisorStateManager - compaction survival', () => {
       const api = createMockApi();
       const state = new SupervisorStateManager(api);
 
-      // Start supervision
       state.start('Lost goal', 'anthropic', 'claude-haiku');
       expect(state.isActive()).toBe(true);
 
-      // Simulate compaction where supervisor-state was in summarized portion
-      // (old, far back in history)
       const postCompactionEntries = [
         {
           type: 'compaction',
           summary: 'Earlier conversation summarized (including old supervisor-state)',
         },
         { type: 'message', message: { role: 'user', content: 'Recent message' } },
-        // No supervisor-state in kept portion!
       ];
 
-      // Reload after compaction
       const ctx = createMockContext(postCompactionEntries);
       state.loadFromSession(ctx);
 
-      // State is lost (as expected - compaction summarized it away)
       expect(state.isActive()).toBe(false);
       expect(state.getState()).toBeNull();
 
-      // Re-persist does nothing when state is null
       api.appendEntry.mockClear();
       state.persist();
       expect(api.appendEntry).not.toHaveBeenCalled();
     });
 
     it('recovers from state loss by re-persisting if was active', () => {
-      // This test verifies the compaction handler pattern:
-      // After compaction, if we had active state but it was lost,
-      // we need some mechanism to recover. In the real implementation,
-      // the session_compact handler checks isActive() after loadFromSession
-      // and re-persists if needed.
-
       const api = createMockApi();
       const state = new SupervisorStateManager(api);
 
-      // Start supervision
       state.start('Goal', 'anthropic', 'claude-haiku');
       expect(state.isActive()).toBe(true);
 
-      // Simulate scenario where state was lost in compaction
-      // In reality, we'd need to track this differently, but the test
-      // verifies the re-persist behavior when state IS active
       api.appendEntry.mockClear();
-
-      // Simulate compaction handler: reload, then if active, re-persist
-      state.persist(); // This would be called after loadFromSession in handler
+      state.persist();
 
       expect(api.appendEntry).toHaveBeenCalledWith(
         'supervisor-state',
         expect.objectContaining({
           active: true,
           outcome: 'Goal',
-          turnCount: 0,
         })
       );
     });
@@ -438,11 +376,9 @@ describe('SupervisorStateManager - compaction survival', () => {
       const api = createMockApi();
       const state = new SupervisorStateManager(api);
 
-      // Start supervision
       state.start('Test goal', 'anthropic', 'claude-haiku');
-      expect(api.appendEntry).toHaveBeenCalledTimes(1); // From start()
+      expect(api.appendEntry).toHaveBeenCalledTimes(1);
 
-      // Simulate session_before_compact handler behavior
       if (state.isActive()) {
         state.persist();
       }
@@ -463,15 +399,12 @@ describe('SupervisorStateManager - compaction survival', () => {
       const api = createMockApi();
       const state = new SupervisorStateManager(api);
 
-      // No active supervision
       expect(state.isActive()).toBe(false);
 
-      // Simulate session_before_compact handler behavior
       if (state.isActive()) {
         state.persist();
       }
 
-      // Should not have called appendEntry
       expect(api.appendEntry).not.toHaveBeenCalled();
     });
 
@@ -479,7 +412,6 @@ describe('SupervisorStateManager - compaction survival', () => {
       const api = createMockApi();
       const state = new SupervisorStateManager(api);
 
-      // Pre-populate with post-compaction entries containing supervisor-state
       const postCompactionEntries = [
         { type: 'compaction', summary: 'Earlier conversation summarized' },
         {
@@ -492,20 +424,16 @@ describe('SupervisorStateManager - compaction survival', () => {
             modelId: 'claude-haiku',
             interventions: [],
             startedAt: 1000,
-            turnCount: 5,
             reframeTier: 1,
-            lastSteerTurn: 4,
           },
         },
       ];
 
       const ctx = createMockContext(postCompactionEntries, true);
 
-      // Simulate session_compact handler
       state.loadFromSession(ctx);
 
       if (state.isActive()) {
-        // Update UI to show we're back
         updateUI(ctx, state.getState(), { type: 'watching', reframeTier: state.getReframeTier() });
       } else {
         updateUI(ctx, null);
@@ -524,7 +452,6 @@ describe('SupervisorStateManager - compaction survival', () => {
       const api = createMockApi();
       const state = new SupervisorStateManager(api);
 
-      // Entries with NO supervisor-state (simulating lost state)
       const lostStateEntries = [
         {
           type: 'compaction',
@@ -535,7 +462,6 @@ describe('SupervisorStateManager - compaction survival', () => {
 
       const ctx = createMockContext(lostStateEntries, true);
 
-      // Simulate session_compact handler
       state.loadFromSession(ctx);
 
       if (state.isActive()) {
@@ -546,164 +472,6 @@ describe('SupervisorStateManager - compaction survival', () => {
 
       expect(state.isActive()).toBe(false);
       expect(updateUI).toHaveBeenCalledWith(ctx, null);
-    });
-
-    it('session_compact triggers steering when agent is idle and steering is needed', async () => {
-      const api = createMockApi();
-      const state = new SupervisorStateManager(api);
-
-      // Mock analyze to return a steering decision
-      vi.mocked(analyze).mockResolvedValue({
-        action: 'steer',
-        message: 'Please continue with the implementation',
-        reasoning: 'Agent idle after compaction',
-        confidence: 0.9,
-        asi: { why_stuck: 'compaction_interrupt', strategy_used: 'directive' },
-      });
-
-      const postCompactionEntries = [
-        { type: 'compaction', summary: 'Earlier conversation summarized' },
-        {
-          type: 'custom',
-          customType: 'supervisor-state',
-          data: {
-            active: true,
-            outcome: 'Implement feature X',
-            provider: 'anthropic',
-            modelId: 'claude-haiku',
-            interventions: [],
-            startedAt: 1000,
-            turnCount: 3,
-            reframeTier: 0,
-            lastSteerTurn: -1,
-          },
-        },
-      ];
-
-      const ctx = createMockContext(postCompactionEntries, true); // Agent is idle
-
-      // Simulate session_compact handler flow
-      state.loadFromSession(ctx);
-
-      if (!state.isActive()) {
-        updateUI(ctx, null);
-        return;
-      }
-
-      updateUI(ctx, state.getState(), { type: 'watching', reframeTier: state.getReframeTier() });
-
-      // If agent is idle, analyze and steer
-      if (ctx.isIdle()) {
-        const s = state.getState()!;
-        updateUI(ctx, s, {
-          type: 'analyzing',
-          turn: s.turnCount,
-          reframeTier: state.getReframeTier(),
-        });
-
-        const decision = await analyze(
-          ctx,
-          s,
-          true,
-          undefined,
-          undefined,
-          (accumulated: string) => {
-            // onDelta callback
-          }
-        );
-
-        if (decision.action === 'steer' && decision.message) {
-          state.addIntervention({
-            turnCount: s.turnCount,
-            message: decision.message,
-            reasoning: decision.reasoning,
-            timestamp: Date.now(),
-            asi: decision.asi,
-          });
-          updateUI(ctx, state.getState(), {
-            type: 'steering',
-            message: decision.message,
-            reframeTier: state.getReframeTier(),
-          });
-          api.sendUserMessage(decision.message);
-        }
-      }
-
-      expect(analyze).toHaveBeenCalledWith(
-        ctx,
-        expect.objectContaining({ outcome: 'Implement feature X' }),
-        true,
-        undefined,
-        undefined,
-        expect.any(Function)
-      );
-      expect(state.getState()?.interventions).toHaveLength(1);
-      expect(api.sendUserMessage).toHaveBeenCalledWith('Please continue with the implementation');
-      expect(updateUI).toHaveBeenLastCalledWith(
-        ctx,
-        expect.any(Object),
-        expect.objectContaining({
-          type: 'steering',
-          message: 'Please continue with the implementation',
-        })
-      );
-    });
-
-    it('session_compact marks done when goal achieved after compaction', async () => {
-      const api = createMockApi();
-      const state = new SupervisorStateManager(api);
-
-      // Mock analyze to return 'done'
-      vi.mocked(analyze).mockResolvedValue({
-        action: 'done',
-        reasoning: 'Goal achieved',
-        confidence: 0.95,
-      });
-
-      const postCompactionEntries = [
-        { type: 'compaction', summary: 'Earlier conversation summarized' },
-        {
-          type: 'custom',
-          customType: 'supervisor-state',
-          data: {
-            active: true,
-            outcome: 'Complete the task',
-            provider: 'anthropic',
-            modelId: 'claude-haiku',
-            interventions: [],
-            startedAt: 1000,
-            turnCount: 10,
-            reframeTier: 0,
-            lastSteerTurn: -1,
-          },
-        },
-      ];
-
-      const ctx = createMockContext(postCompactionEntries, true);
-
-      // Simulate session_compact handler
-      state.loadFromSession(ctx);
-
-      if (!state.isActive()) {
-        updateUI(ctx, null);
-        return;
-      }
-
-      updateUI(ctx, state.getState(), { type: 'watching', reframeTier: state.getReframeTier() });
-
-      if (ctx.isIdle()) {
-        const s = state.getState()!;
-        const decision = await analyze(ctx, s, true);
-
-        if (decision.action === 'done') {
-          state.resetReframeTier();
-          updateUI(ctx, state.getState(), { type: 'done' });
-          state.stop();
-        }
-      }
-
-      expect(state.isActive()).toBe(false);
-      expect(updateUI).toHaveBeenLastCalledWith(ctx, expect.any(Object), { type: 'done' });
     });
 
     it('session_compact does not steer when agent is busy', async () => {
@@ -722,17 +490,13 @@ describe('SupervisorStateManager - compaction survival', () => {
             modelId: 'claude-haiku',
             interventions: [],
             startedAt: 1000,
-            turnCount: 3,
             reframeTier: 0,
-            lastSteerTurn: -1,
           },
         },
       ];
 
-      // Agent is NOT idle (busy streaming)
       const ctx = createMockContext(postCompactionEntries, false);
 
-      // Simulate session_compact handler
       state.loadFromSession(ctx);
 
       if (!state.isActive()) {
@@ -742,7 +506,6 @@ describe('SupervisorStateManager - compaction survival', () => {
 
       updateUI(ctx, state.getState(), { type: 'watching', reframeTier: state.getReframeTier() });
 
-      // Should NOT analyze/steer when agent is busy
       if (ctx.isIdle()) {
         await analyze(ctx, state.getState()!, true);
       }

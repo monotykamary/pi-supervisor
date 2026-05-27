@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { SupervisorStateManager } from '../src/state/manager.js';
 
-// Mock ExtensionAPI
 function createMockApi() {
   return {
     appendEntry: vi.fn(),
@@ -23,7 +22,6 @@ describe('SupervisorStateManager', () => {
 
       expect(state.getReframeTier()).toBe(0);
       expect(state.getState()!.reframeTier).toBe(0);
-      expect(state.getState()!.lastSteerTurn).toBe(-1);
     });
 
     it('escalates reframe tier up to max of 4', () => {
@@ -45,7 +43,6 @@ describe('SupervisorStateManager', () => {
       state.escalateReframeTier();
       expect(state.getReframeTier()).toBe(4);
 
-      // Should not go above 4
       state.escalateReframeTier();
       expect(state.getReframeTier()).toBe(4);
     });
@@ -81,23 +78,6 @@ describe('SupervisorStateManager', () => {
         expect.objectContaining({ reframeTier: 1 })
       );
     });
-
-    it('tracks lastSteerTurn when adding intervention', () => {
-      const api = createMockApi();
-      const state = new SupervisorStateManager(api);
-      state.start('Test goal', 'anthropic', 'claude-haiku');
-      state.incrementTurnCount();
-      state.incrementTurnCount();
-
-      state.addIntervention({
-        turnCount: 2,
-        message: 'Please focus on X',
-        reasoning: 'Agent drifted',
-        timestamp: Date.now(),
-      });
-
-      expect(state.getState()!.lastSteerTurn).toBe(2);
-    });
   });
 
   describe('ineffective pattern detection', () => {
@@ -116,18 +96,13 @@ describe('SupervisorStateManager', () => {
       const state = new SupervisorStateManager(api);
       state.start('Test goal', 'anthropic', 'claude-haiku');
 
-      // Add similar interventions
-      state.incrementTurnCount();
       state.addIntervention({
-        turnCount: 1,
         message: 'Please implement the auth middleware',
         reasoning: 'Not done yet',
         timestamp: Date.now(),
       });
 
-      state.incrementTurnCount();
       state.addIntervention({
-        turnCount: 2,
         message: 'Please implement the auth middleware now',
         reasoning: 'Still not done',
         timestamp: Date.now(),
@@ -138,28 +113,21 @@ describe('SupervisorStateManager', () => {
       expect(pattern.similarCount).toBe(2);
     });
 
-    it('detects lack of progress (3+ turns since steer)', () => {
+    it('detects stagnation (no steer in a while)', () => {
       const api = createMockApi();
       const state = new SupervisorStateManager(api);
       state.start('Test goal', 'anthropic', 'claude-haiku');
 
-      // Add intervention
-      state.incrementTurnCount();
+      // Add intervention from 2 minutes ago
       state.addIntervention({
-        turnCount: 1,
         message: 'Focus on X',
         reasoning: 'Test',
-        timestamp: Date.now(),
+        timestamp: Date.now() - 120_000,
       });
-
-      // Advance 3 turns without steering
-      state.incrementTurnCount(); // turn 2
-      state.incrementTurnCount(); // turn 3
-      state.incrementTurnCount(); // turn 4
 
       const pattern = state.detectIneffectivePattern();
       expect(pattern.detected).toBe(true);
-      expect(pattern.turnsSinceLastSteer).toBe(3);
+      expect(pattern.secondsSinceLastSteer).toBeGreaterThanOrEqual(60);
     });
 
     it('does not detect pattern when progress is being made', () => {
@@ -167,22 +135,15 @@ describe('SupervisorStateManager', () => {
       const state = new SupervisorStateManager(api);
       state.start('Test goal', 'anthropic', 'claude-haiku');
 
-      // Add intervention
-      state.incrementTurnCount();
       state.addIntervention({
-        turnCount: 1,
         message: 'Focus on X',
         reasoning: 'Test',
         timestamp: Date.now(),
       });
 
-      // Only 2 turns since steer
-      state.incrementTurnCount();
-      state.incrementTurnCount();
-
+      // Recent intervention, not stagnant
       const pattern = state.detectIneffectivePattern();
       expect(pattern.detected).toBe(false);
-      expect(pattern.turnsSinceLastSteer).toBe(2);
     });
 
     it('detects dissimilar messages as different', () => {
@@ -190,17 +151,13 @@ describe('SupervisorStateManager', () => {
       const state = new SupervisorStateManager(api);
       state.start('Test goal', 'anthropic', 'claude-haiku');
 
-      state.incrementTurnCount();
       state.addIntervention({
-        turnCount: 1,
         message: 'Implement the database layer',
         reasoning: 'Need DB',
         timestamp: Date.now(),
       });
 
-      state.incrementTurnCount();
       state.addIntervention({
-        turnCount: 2,
         message: 'Now create the API endpoints',
         reasoning: 'Need API',
         timestamp: Date.now(),
@@ -233,9 +190,9 @@ describe('SupervisorStateManager', () => {
       expect(s!.provider).toBe('anthropic');
       expect(s!.modelId).toBe('claude-haiku');
       expect(s!.interventions).toEqual([]);
-      expect(s!.turnCount).toBe(0);
-      expect(s!.snapshotBuffer).toEqual([]);
       expect(s!.justSteered).toBe(false);
+      expect(s!.midRunCounter).toBe(0);
+      expect(s!.idleSteers).toBe(0);
     });
 
     it('stops supervision and marks inactive and clears outcome', () => {
@@ -249,7 +206,7 @@ describe('SupervisorStateManager', () => {
       state.stop();
       expect(state.isActive()).toBe(false);
       expect(state.getState()!.active).toBe(false);
-      expect(state.getState()!.outcome).toBe(''); // Goal cleared for fresh start
+      expect(state.getState()!.outcome).toBe('');
     });
 
     it('persists state on start and stop with cleared outcome', () => {
@@ -272,23 +229,34 @@ describe('SupervisorStateManager', () => {
         'supervisor-state',
         expect.objectContaining({
           active: false,
-          outcome: '', // Goal cleared on stop
+          outcome: '',
         })
       );
     });
   });
 
-  describe('turn management', () => {
-    it('increments turn count', () => {
+  describe('mid-run counter', () => {
+    it('increments mid-run counter', () => {
       const api = createMockApi();
       const state = new SupervisorStateManager(api);
       state.start('Test goal', 'anthropic', 'claude-haiku');
 
-      expect(state.getState()!.turnCount).toBe(0);
-      state.incrementTurnCount();
-      expect(state.getState()!.turnCount).toBe(1);
-      state.incrementTurnCount();
-      expect(state.getState()!.turnCount).toBe(2);
+      expect(state.getState()!.midRunCounter).toBe(0);
+      state.incrementMidRunCounter();
+      expect(state.getState()!.midRunCounter).toBe(1);
+      state.incrementMidRunCounter();
+      expect(state.getState()!.midRunCounter).toBe(2);
+    });
+
+    it('resets mid-run counter', () => {
+      const api = createMockApi();
+      const state = new SupervisorStateManager(api);
+      state.start('Test goal', 'anthropic', 'claude-haiku');
+
+      state.incrementMidRunCounter();
+      state.incrementMidRunCounter();
+      state.resetMidRunCounter();
+      expect(state.getState()!.midRunCounter).toBe(0);
     });
   });
 
@@ -297,10 +265,8 @@ describe('SupervisorStateManager', () => {
       const api = createMockApi();
       const state = new SupervisorStateManager(api);
       state.start('Test goal', 'anthropic', 'claude-haiku');
-      state.incrementTurnCount();
 
       const intervention = {
-        turnCount: 1,
         message: 'Please focus on X',
         reasoning: 'Agent drifted',
         timestamp: Date.now(),
@@ -312,6 +278,7 @@ describe('SupervisorStateManager', () => {
       expect(s.interventions).toHaveLength(1);
       expect(s.interventions[0]).toEqual(intervention);
       expect(s.justSteered).toBe(true);
+      expect(s.midRunCounter).toBe(0);
     });
 
     it('clears justSteered flag', () => {
@@ -320,7 +287,6 @@ describe('SupervisorStateManager', () => {
       state.start('Test goal', 'anthropic', 'claude-haiku');
 
       state.addIntervention({
-        turnCount: 1,
         message: 'Steer',
         reasoning: 'Test',
         timestamp: Date.now(),
@@ -336,26 +302,22 @@ describe('SupervisorStateManager', () => {
       const state = new SupervisorStateManager(api);
 
       state.addIntervention({
-        turnCount: 1,
         message: 'Steer',
         reasoning: 'Test',
         timestamp: Date.now(),
       });
 
-      // Should not throw, should just return
       expect(state.getState()).toBeNull();
     });
   });
 
   describe('shouldAnalyzeMidRun', () => {
-    it('returns false when justSteered is false and turn not divisible by 8', () => {
+    it('returns false when justSteered is false and counter below threshold', () => {
       const api = createMockApi();
       const state = new SupervisorStateManager(api);
       state.start('Test goal', 'anthropic', 'claude-haiku');
 
-      expect(state.shouldAnalyzeMidRun(1)).toBe(false);
-      expect(state.shouldAnalyzeMidRun(2)).toBe(false);
-      expect(state.shouldAnalyzeMidRun(7)).toBe(false);
+      expect(state.shouldAnalyzeMidRun()).toBe(false);
     });
 
     it('returns true when justSteered is true', () => {
@@ -364,46 +326,33 @@ describe('SupervisorStateManager', () => {
       state.start('Test goal', 'anthropic', 'claude-haiku');
 
       state.addIntervention({
-        turnCount: 1,
         message: 'Steer',
         reasoning: 'Test',
         timestamp: Date.now(),
       });
 
-      expect(state.shouldAnalyzeMidRun(1)).toBe(true);
+      expect(state.shouldAnalyzeMidRun()).toBe(true);
     });
 
-    it('returns true every 8th turn (safety valve)', () => {
+    it('returns true when mid-run counter reaches threshold (8)', () => {
       const api = createMockApi();
       const state = new SupervisorStateManager(api);
       state.start('Test goal', 'anthropic', 'claude-haiku');
 
-      expect(state.shouldAnalyzeMidRun(8)).toBe(true);
-      expect(state.shouldAnalyzeMidRun(16)).toBe(true);
-      expect(state.shouldAnalyzeMidRun(24)).toBe(true);
-    });
+      for (let i = 0; i < 7; i++) {
+        state.incrementMidRunCounter();
+        expect(state.shouldAnalyzeMidRun()).toBe(false);
+      }
 
-    it('returns true when both conditions met', () => {
-      const api = createMockApi();
-      const state = new SupervisorStateManager(api);
-      state.start('Test goal', 'anthropic', 'claude-haiku');
-
-      state.addIntervention({
-        turnCount: 1,
-        message: 'Steer',
-        reasoning: 'Test',
-        timestamp: Date.now(),
-      });
-
-      // Both justSteered and 8th turn
-      expect(state.shouldAnalyzeMidRun(8)).toBe(true);
+      state.incrementMidRunCounter(); // 8th
+      expect(state.shouldAnalyzeMidRun()).toBe(true);
     });
 
     it('returns false when not active', () => {
       const api = createMockApi();
       const state = new SupervisorStateManager(api);
 
-      expect(state.shouldAnalyzeMidRun(8)).toBe(false);
+      expect(state.shouldAnalyzeMidRun()).toBe(false);
     });
   });
 
@@ -414,7 +363,6 @@ describe('SupervisorStateManager', () => {
       state.start('Test goal', 'anthropic', 'claude-haiku');
 
       state.addIntervention({
-        turnCount: 1,
         message: 'Focus on tests',
         reasoning: 'Drift detected',
         timestamp: Date.now(),
@@ -438,7 +386,6 @@ describe('SupervisorStateManager', () => {
       state.start('Test goal', 'anthropic', 'claude-haiku');
 
       state.addIntervention({
-        turnCount: 1,
         message: 'Focus',
         reasoning: 'Test',
         timestamp: Date.now(),
@@ -455,7 +402,6 @@ describe('SupervisorStateManager', () => {
       state.start('Test goal', 'anthropic', 'claude-haiku');
 
       state.addIntervention({
-        turnCount: 1,
         message: 'Focus on tests',
         reasoning: 'Drift',
         timestamp: 1234567890,
@@ -492,34 +438,33 @@ describe('SupervisorStateManager', () => {
       const api = createMockApi();
       const state = new SupervisorStateManager(api);
 
-      // Should not throw
       state.setModel('openai', 'gpt-4o');
       expect(state.getState()).toBeNull();
     });
   });
 
-  describe('snapshot buffer', () => {
-    it('updates and retrieves snapshot buffer', () => {
+  describe('idle steers', () => {
+    it('tracks idle steers count', () => {
       const api = createMockApi();
       const state = new SupervisorStateManager(api);
       state.start('Test goal', 'anthropic', 'claude-haiku');
 
-      const messages = [
-        { role: 'user' as const, content: 'Hello' },
-        { role: 'assistant' as const, content: 'Hi there' },
-      ];
-
-      state.updateSnapshotBuffer(messages);
-
-      expect(state.getSnapshotBuffer()).toEqual(messages);
-      expect(state.getState()!.lastAnalyzedTurn).toBe(0);
+      expect(state.getIdleSteers()).toBe(0);
+      state.incrementIdleSteers();
+      expect(state.getIdleSteers()).toBe(1);
+      state.incrementIdleSteers();
+      expect(state.getIdleSteers()).toBe(2);
     });
 
-    it('returns empty array when not active', () => {
+    it('resets idle steers', () => {
       const api = createMockApi();
       const state = new SupervisorStateManager(api);
+      state.start('Test goal', 'anthropic', 'claude-haiku');
 
-      expect(state.getSnapshotBuffer()).toEqual([]);
+      state.incrementIdleSteers();
+      state.incrementIdleSteers();
+      state.resetIdleSteers();
+      expect(state.getIdleSteers()).toBe(0);
     });
   });
 });

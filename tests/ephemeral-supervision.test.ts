@@ -23,10 +23,6 @@ vi.mock('../src/ui/model-picker.js', () => ({
   pickModel: vi.fn(),
 }));
 
-vi.mock('../src/ui/settings-panel.js', () => ({
-  openSettings: vi.fn(),
-}));
-
 vi.mock('../src/global-config.js', () => ({
   loadGlobalModel: vi.fn().mockReturnValue(null),
   saveGlobalModel: vi.fn(),
@@ -46,7 +42,6 @@ vi.mock('../src/subagent-detector.js', () => ({
 import { updateUI } from '../src/ui/renderer.js';
 import { disposeSession } from '../src/session/client.js';
 
-// Mock ExtensionAPI
 function createMockApi() {
   return {
     appendEntry: vi.fn(),
@@ -84,6 +79,19 @@ function createMockContext(entries: any[] = [], isIdle = true) {
   } as any;
 }
 
+function makeSupervisionData(overrides: Record<string, any> = {}) {
+  return {
+    active: true,
+    outcome: 'Test goal',
+    provider: 'anthropic',
+    modelId: 'claude-haiku',
+    interventions: [],
+    startedAt: Date.now(),
+    reframeTier: 0,
+    ...overrides,
+  };
+}
+
 describe('Ephemeral Supervision - idle agent clears supervision', () => {
   let api: ReturnType<typeof createMockApi>;
   let state: SupervisorStateManager;
@@ -96,27 +104,16 @@ describe('Ephemeral Supervision - idle agent clears supervision', () => {
 
   function startActiveSupervision() {
     state.start('Test goal', 'anthropic', 'claude-haiku');
-    state.incrementTurnCount();
     expect(state.isActive()).toBe(true);
   }
 
-  function createSessionWithSupervision() {
+  function createSessionWithSupervision(overrides: Record<string, any> = {}) {
     return [
       { type: 'message', message: { role: 'user', content: 'Hello' } },
       {
         type: 'custom',
         customType: 'supervisor-state',
-        data: {
-          active: true,
-          outcome: 'Test goal',
-          provider: 'anthropic',
-          modelId: 'claude-haiku',
-          interventions: [],
-          startedAt: Date.now(),
-          turnCount: 1,
-          reframeTier: 0,
-          lastSteerTurn: 0,
-        },
+        data: makeSupervisionData(overrides),
       },
     ];
   }
@@ -125,16 +122,11 @@ describe('Ephemeral Supervision - idle agent clears supervision', () => {
     it('clears supervision when agent is idle', () => {
       startActiveSupervision();
 
-      // Simulate session_start with idle agent (e.g., after crash)
       const entries = createSessionWithSupervision();
-      const ctx = createMockContext(entries, true /* idle */);
+      const ctx = createMockContext(entries, true);
 
       state.loadFromSession(ctx);
 
-      // Ephemeral rule: idle agent means supervision is cleared
-      expect(state.isActive()).toBe(true); // Still active after load
-
-      // But onSessionLoad handler should stop it
       if (state.isActive() && ctx.isIdle()) {
         state.stop();
         disposeSession();
@@ -146,13 +138,11 @@ describe('Ephemeral Supervision - idle agent clears supervision', () => {
     it('keeps supervision when agent is working', () => {
       startActiveSupervision();
 
-      // Simulate session_start with working agent
       const entries = createSessionWithSupervision();
-      const ctx = createMockContext(entries, false /* working */);
+      const ctx = createMockContext(entries, false);
 
       state.loadFromSession(ctx);
 
-      // Ephemeral rule: working agent means supervision continues
       expect(state.isActive()).toBe(true);
     });
   });
@@ -162,11 +152,10 @@ describe('Ephemeral Supervision - idle agent clears supervision', () => {
       startActiveSupervision();
 
       const entries = createSessionWithSupervision();
-      const ctx = createMockContext(entries, true /* idle */);
+      const ctx = createMockContext(entries, true);
 
       state.loadFromSession(ctx);
 
-      // Ephemeral rule applies
       if (state.isActive() && ctx.isIdle()) {
         state.stop();
         disposeSession();
@@ -179,7 +168,7 @@ describe('Ephemeral Supervision - idle agent clears supervision', () => {
       startActiveSupervision();
 
       const entries = createSessionWithSupervision();
-      const ctx = createMockContext(entries, false /* working */);
+      const ctx = createMockContext(entries, false);
 
       state.loadFromSession(ctx);
 
@@ -192,11 +181,10 @@ describe('Ephemeral Supervision - idle agent clears supervision', () => {
       startActiveSupervision();
 
       const entries = createSessionWithSupervision();
-      const ctx = createMockContext(entries, true /* idle */);
+      const ctx = createMockContext(entries, true);
 
       state.loadFromSession(ctx);
 
-      // Ephemeral rule: viewing history + idle = no supervision
       if (state.isActive() && ctx.isIdle()) {
         state.stop();
         disposeSession();
@@ -209,7 +197,7 @@ describe('Ephemeral Supervision - idle agent clears supervision', () => {
       startActiveSupervision();
 
       const entries = createSessionWithSupervision();
-      const ctx = createMockContext(entries, false /* working */);
+      const ctx = createMockContext(entries, false);
 
       state.loadFromSession(ctx);
 
@@ -222,7 +210,7 @@ describe('Ephemeral Supervision - idle agent clears supervision', () => {
       startActiveSupervision();
 
       const entries = createSessionWithSupervision();
-      const ctx = createMockContext(entries, true /* idle */);
+      const ctx = createMockContext(entries, true);
 
       state.loadFromSession(ctx);
 
@@ -238,7 +226,7 @@ describe('Ephemeral Supervision - idle agent clears supervision', () => {
       startActiveSupervision();
 
       const entries = createSessionWithSupervision();
-      const ctx = createMockContext(entries, false /* working */);
+      const ctx = createMockContext(entries, false);
 
       state.loadFromSession(ctx);
 
@@ -257,60 +245,40 @@ describe('Ephemeral Supervision - compaction behavior', () => {
     vi.clearAllMocks();
   });
 
-  function createSessionWithSupervision() {
+  function createSessionWithSupervision(overrides: Record<string, any> = {}) {
     return [
       { type: 'compaction', summary: 'Earlier conversation' },
       { type: 'message', message: { role: 'user', content: 'Continue' } },
       {
         type: 'custom',
         customType: 'supervisor-state',
-        data: {
-          active: true,
-          outcome: 'Test goal',
-          provider: 'anthropic',
-          modelId: 'claude-haiku',
-          interventions: [],
-          startedAt: Date.now(),
-          turnCount: 5,
-          reframeTier: 1,
-          lastSteerTurn: 3,
-        },
+        data: makeSupervisionData(overrides),
       },
     ];
   }
 
   it('continues supervision when agent is working after compaction (long-horizon sessions)', () => {
-    // Start supervision
     state.start('Test goal', 'anthropic', 'claude-haiku');
-    state.incrementTurnCount();
     expect(state.isActive()).toBe(true);
 
-    // Simulate post-compaction state with WORKING agent
-    const entries = createSessionWithSupervision();
-    const ctx = createMockContext(entries, false /* working, not idle */);
+    const entries = createSessionWithSupervision({ reframeTier: 1 });
+    const ctx = createMockContext(entries, false);
 
     state.loadFromSession(ctx);
 
-    // Ephemeral rule: working agent means supervision continues
-    // This enables long-horizon supervised sessions that auto-compact
     expect(state.isActive()).toBe(true);
-    expect(state.getState()?.turnCount).toBe(5);
     expect(state.getReframeTier()).toBe(1);
   });
 
   it('clears supervision when agent is idle after compaction', () => {
-    // Start supervision
     state.start('Test goal', 'anthropic', 'claude-haiku');
-    state.incrementTurnCount();
     expect(state.isActive()).toBe(true);
 
-    // Simulate post-compaction state with IDLE agent
     const entries = createSessionWithSupervision();
-    const ctx = createMockContext(entries, true /* idle */);
+    const ctx = createMockContext(entries, true);
 
     state.loadFromSession(ctx);
 
-    // Ephemeral rule: idle agent means supervision is cleared
     if (state.isActive() && ctx.isIdle()) {
       state.stop();
       disposeSession();
@@ -330,22 +298,12 @@ describe('Ephemeral Supervision - UI notifications', () => {
     vi.clearAllMocks();
   });
 
-  function createSessionWithSupervision() {
+  function createSessionWithSupervision(overrides: Record<string, any> = {}) {
     return [
       {
         type: 'custom',
         customType: 'supervisor-state',
-        data: {
-          active: true,
-          outcome: 'Test goal',
-          provider: 'anthropic',
-          modelId: 'claude-haiku',
-          interventions: [],
-          startedAt: Date.now(),
-          turnCount: 1,
-          reframeTier: 0,
-          lastSteerTurn: 0,
-        },
+        data: makeSupervisionData(overrides),
       },
     ];
   }
@@ -354,13 +312,12 @@ describe('Ephemeral Supervision - UI notifications', () => {
     const entries = createSessionWithSupervision();
     const notify = vi.fn();
     const ctx = {
-      ...createMockContext(entries, true /* idle */),
+      ...createMockContext(entries, true),
       ui: { ...createMockContext().ui, notify },
     };
 
     state.loadFromSession(ctx);
 
-    // Simulate onSessionLoad notification
     if (state.isActive() && ctx.isIdle()) {
       notify('Supervision cleared: agent is idle', 'info');
     }
@@ -372,13 +329,12 @@ describe('Ephemeral Supervision - UI notifications', () => {
     const entries = createSessionWithSupervision();
     const notify = vi.fn();
     const ctx = {
-      ...createMockContext(entries, true /* idle */),
+      ...createMockContext(entries, true),
       ui: { ...createMockContext().ui, notify },
     };
 
     state.loadFromSession(ctx);
 
-    // Simulate session_compact handler notification
     if (state.isActive() && ctx.isIdle()) {
       notify('Supervision cleared: compaction complete, agent idle', 'info');
     }

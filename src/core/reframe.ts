@@ -2,12 +2,10 @@
  * Reframe tier management - escalation strategies for ineffective steering.
  */
 
-import type { ReframeTier } from '../types.js';
-
 /** Get reframe guidance based on current tier */
 export function getReframeGuidance(
   tier: number,
-  ineffectivePattern?: { detected: boolean; similarCount: number; turnsSinceLastSteer: number }
+  ineffectivePattern?: { detected: boolean; similarCount: number; secondsSinceLastSteer: number }
 ): string {
   if (!ineffectivePattern?.detected && tier === 0) return '';
 
@@ -19,12 +17,11 @@ export function getReframeGuidance(
     4: `🔄 REFRAME TIER 4 — MINIMAL SLICE: Strip to absolute essentials. Ask: "What's the smallest working version you can deliver right now?" Push for tangible output.`,
   };
 
+  const stagnation = ineffectivePattern?.secondsSinceLastSteer ?? 0;
+  const stagnationNote = stagnation > 0 ? ` (${stagnation}s since last steer)` : '';
   const patternNote = ineffectivePattern?.detected
-    ? `\n⚠ INEFFECTIVE PATTERN DETECTED: Last ${ineffectivePattern.similarCount} steering messages were similar or no progress in ${ineffectivePattern.turnsSinceLastSteer} turns. Escalate your approach.`
+    ? `\n⚠ INEFFECTIVE PATTERN DETECTED: Last ${ineffectivePattern.similarCount} steering messages were similar or no progress in${stagnationNote}. Escalate your approach.`
     : '';
 
   return tierGuidance[tier] + patternNote;
 }
-
-/** Maximum reframe tier value */
-export const MAX_REFRAME_TIER: ReframeTier = 4;

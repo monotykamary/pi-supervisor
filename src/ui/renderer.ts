@@ -143,7 +143,7 @@ function renderWithState(
         actionStr = theme.fg('dim', 'watching');
         break;
       case 'analyzing':
-        actionStr = theme.fg('warning', `⟳ turn ${action.turn}`);
+        actionStr = theme.fg('warning', '⟳ analyzing');
         thinking = action.thinking ?? lastThinking;
         break;
       case 'steering':
@@ -154,6 +154,7 @@ function renderWithState(
         break;
       case 'waiting':
         actionStr = theme.fg('warning', `⏳ ${action.message}`);
+        break;
         break;
       case 'inferring':
         actionStr = theme.fg('dim', 'scanning');
