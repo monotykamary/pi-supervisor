@@ -21,12 +21,12 @@ https://github.com/user-attachments/assets/f3b23662-6473-4ac3-82f7-c7f9b34fa7c7
 Then start the conversation normally — the supervisor watches from outside without modifying the agent's context.
 
 1. **After each run** — the supervisor analyzes the conversation against the goal when the agent goes idle
-2. **Mid-run, only when needed** — checks after steering (to verify it worked) or every 8th turn as safety valve
+2. **Mid-run, only when needed** — checks after steering (to verify it worked) or as a safety valve after prolonged activity
 3. **On completion** — supervisor signals done and stops automatically
 
 The supervisor is a pure outside observer. It runs in a separate in-memory pi session sharing only the API credentials and never touches the main agent's context window or system prompt.
 
-**Token efficiency:** The supervisor reuses its session across analyses and builds conversation snapshots incrementally, using ~85% fewer tokens than naive supervision.
+**Context for the supervisor LLM is built algorithmically** — no rolling buffers, no state accumulation. At each analysis point, the full conversation is processed through an internal compaction pipeline (ported from [pi-vcc](https://github.com/monotykamary/pi-vcc)) that produces a structured summary: session goals, file activity, outstanding errors, current status, and a compressed brief transcript. The supervisor LLM receives this rich, information-dense context fresh every time, built in ~1ms with zero API cost.
 
 ## Install
 
@@ -95,10 +95,42 @@ The thinking text streams naturally into multiple lines. When supervision ends o
 | ----------------------------- | ------------------------------------------------ |
 | Agent goes idle (`agent_end`) | Critical decision point — must choose done/steer |
 | After we steered              | Verify the steer worked                          |
-| Every 8th turn                | Safety valve to catch runaway drift              |
+| Mid-run safety valve          | Catch runaway drift during long runs             |
 | Tool errors detected          | If agent hits an error, we check                 |
 
 The supervisor only intervenes when it has high confidence the agent is off track. It trusts the agent to make progress and only steps in when necessary.
+
+### Algorithmic Context Building
+
+At each analysis point, the conversation is processed through an internal compaction pipeline — the same algorithm used by [pi-vcc](https://github.com/monotykamary/pi-vcc), but used here as a read-only transformation, not as a session compactor.
+
+**Pipeline:** `normalize → filter noise → build sections → format`
+
+| Step               | What it does                                                                                                  |
+| ------------------ | ------------------------------------------------------------------------------------------------------------- |
+| **Normalize**      | Raw Pi messages → uniform blocks (user, assistant, tool_call, tool_result, thinking, bash)                    |
+| **Filter noise**   | Strip system messages, thinking blocks, noise tools (TodoWrite), XML wrappers                                 |
+| **Build sections** | Extract session goals, file paths + symbols, type catalog, outstanding errors, current status, turn summaries |
+| **Format**         | Render as bracketed sections + brief transcript for the supervisor LLM                                        |
+
+**Properties:**
+
+- **No LLM call** — purely algorithmic, zero extra API cost, ~1ms
+- **Stateless** — built fresh from the full conversation each time, no rolling buffer or accumulated summary
+- **Structured** — the supervisor LLM receives sections like `[Session Goal]`, `[Files And Changes]`, `[Outstanding Context]`, `[Current Status]` instead of a raw message dump
+
+**Structured sections produced:**
+
+| Section                 | Description                                                                                                          |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `[Session Goal]`        | Initial goal + scope changes (regex-based extraction)                                                                |
+| `[Files And Changes]`   | Modified/created/read files from tool calls, annotated with exported symbol names                                    |
+| `[Commits]`             | Git commits made during the session (hash + first line)                                                              |
+| `[Outstanding Context]` | Unresolved errors, test failures, tsc errors, empty search results — tagged `[ERROR]`/`[WARN]`/`[INFO]`/`[RESOLVED]` |
+| `[Current Status]`      | Current focus, last file-modifying action, and next steps                                                            |
+| `[Earlier Turns]`       | Per-turn one-liner summaries for every conversational turn                                                           |
+| `[User Preferences]`    | Regex-extracted from user messages (`always`, `never`, `prefer`...)                                                  |
+| Brief transcript        | Chronological conversation flow, tool calls collapsed to one-liners with `(#N)` refs                                 |
 
 ## Reframe Escalation
 
@@ -112,10 +144,10 @@ When the supervisor detects that steering isn't working, it escalates through **
 | 3    | Still stuck               | **Pivot** — suggest a completely different strategy or implementation path |
 | 4    | Persistent stall          | **Minimal slice** — strip to absolute essentials, demand tangible output   |
 
-**Pattern detection:** The supervisor tracks two indicators of ineffectiveness:
+**Pattern detection** tracks two indicators of ineffectiveness:
 
 - **Message similarity** — when 2+ recent steering messages are similar (suggesting the agent isn't responding)
-- **Stagnation** — when 3+ turns pass without progress after a steer
+- **Stagnation** — when time passes without progress after a steer
 
 When either pattern is detected, the supervisor escalates the reframe tier and injects tier-specific guidance into its prompt. The tier resets when the goal is achieved. This allows the supervisor to adapt to long-horizon projects that may take hours or days, rather than forcing early termination.
 
@@ -245,15 +277,31 @@ Coverage report generated in `coverage/`.
 ```
 src/
   index.ts              # Extension entry point, event wiring, /supervise command, start_supervision tool
-  types.ts              # SupervisorState, SteeringDecision, ConversationMessage, ReframeTier
+  types.ts              # SupervisorState, SteeringDecision, ReframeTier
+  compaction/           # Algorithmic context building (ported from pi-vcc)
+    index.ts            # Public API: extractMessages(), buildCompactionSummary(), formatForSupervisor()
+    normalize.ts        # Message[] → NormalizedBlock[]
+    filter-noise.ts     # Strip thinking, TodoWrite, XML wrappers
+    build-sections.ts   # Build all structured sections
+    brief.ts            # Compressed [user]/[assistant]/[tool_error] transcript
+    sanitize.ts         # ANSI/control char stripping
+    content.ts          # Text utilities: clip, firstLine, textOf
+    tool-args.ts        # Path extraction from tool arguments
+    skill-collapse.ts   # Collapse <skill> XML blocks
+    types.ts            # NormalizedBlock, ToolResultIndex, SectionData, SymbolRef
+    extract/            # Section extractors
+      goals.ts          # User goal + scope change extraction
+      commits.ts        # Git commit extraction
+      preferences.ts    # User preference extraction
+      shared-symbols.ts # Unified file/symbol/type extraction
   state/                # State management
     manager.ts          # SupervisorStateManager — persistence, reframe tier, pattern detection
   core/                 # Core supervision logic
-    analyzer.ts         # Main analysis engine
+    analyzer.ts         # Main analysis engine (builds fresh compaction each call)
     inference.ts        # Goal inference from conversation
     prompt-loader.ts    # SUPERVISOR.md loading
   session/              # Model session management
-    client.ts           # SupervisorSession (reusable), API calls
+    client.ts           # callSupervisorModel — one-shot analysis via reusable session
   ui/                   # User interface
     renderer.ts         # Widget rendering and footer management
     animations.ts       # Thought clearing animations
