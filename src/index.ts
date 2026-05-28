@@ -24,6 +24,7 @@ import { loadGlobalModel } from './global-config.js';
 import { disposeSession } from './session/client.js';
 import { Type } from '@sinclair/typebox';
 import { checkChildPiProcesses, waitForSubagents } from './subagent-detector.js';
+import { detectMidRunSignals } from './state/mid-run-signals.js';
 import { createInitialState, type WidgetState } from './ui/types.js';
 import {
   extractMessages,
@@ -137,24 +138,23 @@ export default function (pi: ExtensionAPI) {
     currentCtx = ctx;
   });
 
-  // ---- Mid-run steering: safety valve ----
+  // ---- Mid-run steering: signal-based ----
   // turn_end fires after each LLM sub-turn while agent is still running.
-  // We check only if:
-  // 1. We just steered (to verify it worked) — immediate next turn
-  // 2. Safety valve every Nth turn (to catch runaway drift)
+  // Instead of a blind turn counter, we check for reactive signals:
+  // - just steered → verify it worked
+  // - tool error → check if the agent is stuck
+  // - file read loop → same file read 4+ times without an edit
+  // - read-only stagnation → 8+ consecutive read calls without a mutation
 
   pi.on('turn_end', async (_event, ctx) => {
     currentCtx = ctx;
     if (!state.isActive()) return;
 
-    state.incrementMidRunCounter();
+    const messages = extractMessages(ctx);
+    const signal = detectMidRunSignals(messages, state.getState()!.justSteered ?? false);
+    if (!signal) return;
 
-    const shouldAnalyze = state.shouldAnalyzeMidRun();
-    if (!shouldAnalyze) return;
-
-    // Clear the justSteered flag since we're checking now
     state.clearJustSteered();
-    state.resetMidRunCounter();
 
     let decision;
     try {

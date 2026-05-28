@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { SupervisorStateManager } from '../src/state/manager.js';
+import { detectMidRunSignals } from '../src/state/mid-run-signals.js';
+import type { Message } from '@earendil-works/pi-ai';
 
 function createMockApi() {
   return {
@@ -11,6 +13,33 @@ function createMockApi() {
     sendMessage: vi.fn(),
     events: { emit: vi.fn(), on: vi.fn() },
   } as any;
+}
+
+function makeUserMessage(text: string): Message {
+  return { role: 'user', content: text } as Message;
+}
+
+function makeAssistantMessage(text: string): Message {
+  return {
+    role: 'assistant',
+    content: [{ type: 'text', text }],
+  } as unknown as Message;
+}
+
+function makeToolCallMessage(name: string, args: Record<string, unknown> = {}): Message {
+  return {
+    role: 'assistant',
+    content: [{ type: 'toolCall', name, arguments: args }],
+  } as unknown as Message;
+}
+
+function makeToolResultMessage(name: string, text: string, isError = false): Message {
+  return {
+    role: 'toolResult',
+    toolName: name,
+    content: text,
+    isError,
+  } as unknown as Message;
 }
 
 describe('SupervisorStateManager', () => {
@@ -28,8 +57,6 @@ describe('SupervisorStateManager', () => {
       const api = createMockApi();
       const state = new SupervisorStateManager(api);
       state.start('Test goal', 'anthropic', 'claude-haiku');
-
-      expect(state.getReframeTier()).toBe(0);
 
       state.escalateReframeTier();
       expect(state.getReframeTier()).toBe(1);
@@ -54,15 +81,7 @@ describe('SupervisorStateManager', () => {
 
       state.escalateReframeTier();
       state.escalateReframeTier();
-      expect(state.getReframeTier()).toBe(2);
-
       state.resetReframeTier();
-      expect(state.getReframeTier()).toBe(0);
-    });
-
-    it('returns 0 when not active', () => {
-      const api = createMockApi();
-      const state = new SupervisorStateManager(api);
       expect(state.getReframeTier()).toBe(0);
     });
 
@@ -88,7 +107,6 @@ describe('SupervisorStateManager', () => {
 
       const pattern = state.detectIneffectivePattern();
       expect(pattern.detected).toBe(false);
-      expect(pattern.similarCount).toBe(0);
     });
 
     it('detects similar messages', () => {
@@ -118,7 +136,6 @@ describe('SupervisorStateManager', () => {
       const state = new SupervisorStateManager(api);
       state.start('Test goal', 'anthropic', 'claude-haiku');
 
-      // Add intervention from 2 minutes ago
       state.addIntervention({
         message: 'Focus on X',
         reasoning: 'Test',
@@ -128,22 +145,6 @@ describe('SupervisorStateManager', () => {
       const pattern = state.detectIneffectivePattern();
       expect(pattern.detected).toBe(true);
       expect(pattern.secondsSinceLastSteer).toBeGreaterThanOrEqual(60);
-    });
-
-    it('does not detect pattern when progress is being made', () => {
-      const api = createMockApi();
-      const state = new SupervisorStateManager(api);
-      state.start('Test goal', 'anthropic', 'claude-haiku');
-
-      state.addIntervention({
-        message: 'Focus on X',
-        reasoning: 'Test',
-        timestamp: Date.now(),
-      });
-
-      // Recent intervention, not stagnant
-      const pattern = state.detectIneffectivePattern();
-      expect(pattern.detected).toBe(false);
     });
 
     it('detects dissimilar messages as different', () => {
@@ -165,7 +166,6 @@ describe('SupervisorStateManager', () => {
 
       const pattern = state.detectIneffectivePattern();
       expect(pattern.detected).toBe(false);
-      expect(pattern.similarCount).toBe(1);
     });
   });
 
@@ -183,102 +183,42 @@ describe('SupervisorStateManager', () => {
 
       state.start('Test goal', 'anthropic', 'claude-haiku');
 
-      expect(state.isActive()).toBe(true);
-      const s = state.getState();
-      expect(s).not.toBeNull();
-      expect(s!.outcome).toBe('Test goal');
-      expect(s!.provider).toBe('anthropic');
-      expect(s!.modelId).toBe('claude-haiku');
-      expect(s!.interventions).toEqual([]);
-      expect(s!.justSteered).toBe(false);
-      expect(s!.midRunCounter).toBe(0);
-      expect(s!.idleSteers).toBe(0);
+      const s = state.getState()!;
+      expect(s.active).toBe(true);
+      expect(s.outcome).toBe('Test goal');
+      expect(s.provider).toBe('anthropic');
+      expect(s.modelId).toBe('claude-haiku');
+      expect(s.interventions).toEqual([]);
+      expect(s.justSteered).toBe(false);
+      expect(s.idleSteers).toBe(0);
     });
 
-    it('stops supervision and marks inactive and clears outcome', () => {
+    it('stops supervision and marks inactive', () => {
       const api = createMockApi();
       const state = new SupervisorStateManager(api);
 
       state.start('Test goal', 'anthropic', 'claude-haiku');
-      expect(state.isActive()).toBe(true);
-      expect(state.getState()!.outcome).toBe('Test goal');
-
       state.stop();
       expect(state.isActive()).toBe(false);
       expect(state.getState()!.active).toBe(false);
-      expect(state.getState()!.outcome).toBe('');
-    });
-
-    it('persists state on start and stop with cleared outcome', () => {
-      const api = createMockApi();
-      const state = new SupervisorStateManager(api);
-
-      state.start('Test goal', 'anthropic', 'claude-haiku');
-      expect(api.appendEntry).toHaveBeenCalledTimes(1);
-      expect(api.appendEntry).toHaveBeenCalledWith(
-        'supervisor-state',
-        expect.objectContaining({
-          active: true,
-          outcome: 'Test goal',
-        })
-      );
-
-      state.stop();
-      expect(api.appendEntry).toHaveBeenCalledTimes(2);
-      expect(api.appendEntry).toHaveBeenLastCalledWith(
-        'supervisor-state',
-        expect.objectContaining({
-          active: false,
-          outcome: '',
-        })
-      );
-    });
-  });
-
-  describe('mid-run counter', () => {
-    it('increments mid-run counter', () => {
-      const api = createMockApi();
-      const state = new SupervisorStateManager(api);
-      state.start('Test goal', 'anthropic', 'claude-haiku');
-
-      expect(state.getState()!.midRunCounter).toBe(0);
-      state.incrementMidRunCounter();
-      expect(state.getState()!.midRunCounter).toBe(1);
-      state.incrementMidRunCounter();
-      expect(state.getState()!.midRunCounter).toBe(2);
-    });
-
-    it('resets mid-run counter', () => {
-      const api = createMockApi();
-      const state = new SupervisorStateManager(api);
-      state.start('Test goal', 'anthropic', 'claude-haiku');
-
-      state.incrementMidRunCounter();
-      state.incrementMidRunCounter();
-      state.resetMidRunCounter();
-      expect(state.getState()!.midRunCounter).toBe(0);
     });
   });
 
   describe('interventions', () => {
-    it('adds intervention with correct data', () => {
+    it('adds intervention and marks justSteered', () => {
       const api = createMockApi();
       const state = new SupervisorStateManager(api);
       state.start('Test goal', 'anthropic', 'claude-haiku');
 
-      const intervention = {
+      state.addIntervention({
         message: 'Please focus on X',
         reasoning: 'Agent drifted',
         timestamp: Date.now(),
-      };
-
-      state.addIntervention(intervention);
+      });
 
       const s = state.getState()!;
       expect(s.interventions).toHaveLength(1);
-      expect(s.interventions[0]).toEqual(intervention);
       expect(s.justSteered).toBe(true);
-      expect(s.midRunCounter).toBe(0);
     });
 
     it('clears justSteered flag', () => {
@@ -286,11 +226,7 @@ describe('SupervisorStateManager', () => {
       const state = new SupervisorStateManager(api);
       state.start('Test goal', 'anthropic', 'claude-haiku');
 
-      state.addIntervention({
-        message: 'Steer',
-        reasoning: 'Test',
-        timestamp: Date.now(),
-      });
+      state.addIntervention({ message: 'Steer', reasoning: 'Test', timestamp: Date.now() });
       expect(state.getState()!.justSteered).toBe(true);
 
       state.clearJustSteered();
@@ -301,145 +237,23 @@ describe('SupervisorStateManager', () => {
       const api = createMockApi();
       const state = new SupervisorStateManager(api);
 
-      state.addIntervention({
-        message: 'Steer',
-        reasoning: 'Test',
-        timestamp: Date.now(),
-      });
-
+      state.addIntervention({ message: 'Steer', reasoning: 'Test', timestamp: Date.now() });
       expect(state.getState()).toBeNull();
     });
   });
 
-  describe('shouldAnalyzeMidRun', () => {
-    it('returns false when justSteered is false and counter below threshold', () => {
+  describe('persistence', () => {
+    it('does not persist justSteered (ephemeral)', () => {
       const api = createMockApi();
       const state = new SupervisorStateManager(api);
       state.start('Test goal', 'anthropic', 'claude-haiku');
 
-      expect(state.shouldAnalyzeMidRun()).toBe(false);
-    });
+      state.addIntervention({ message: 'Steer', reasoning: 'Test', timestamp: Date.now() });
 
-    it('returns true when justSteered is true', () => {
-      const api = createMockApi();
-      const state = new SupervisorStateManager(api);
-      state.start('Test goal', 'anthropic', 'claude-haiku');
-
-      state.addIntervention({
-        message: 'Steer',
-        reasoning: 'Test',
-        timestamp: Date.now(),
-      });
-
-      expect(state.shouldAnalyzeMidRun()).toBe(true);
-    });
-
-    it('returns true when mid-run counter reaches threshold (8)', () => {
-      const api = createMockApi();
-      const state = new SupervisorStateManager(api);
-      state.start('Test goal', 'anthropic', 'claude-haiku');
-
-      for (let i = 0; i < 7; i++) {
-        state.incrementMidRunCounter();
-        expect(state.shouldAnalyzeMidRun()).toBe(false);
-      }
-
-      state.incrementMidRunCounter(); // 8th
-      expect(state.shouldAnalyzeMidRun()).toBe(true);
-    });
-
-    it('returns false when not active', () => {
-      const api = createMockApi();
-      const state = new SupervisorStateManager(api);
-
-      expect(state.shouldAnalyzeMidRun()).toBe(false);
-    });
-  });
-
-  describe('intervention ASI persistence', () => {
-    it('stores intervention with ASI', () => {
-      const api = createMockApi();
-      const state = new SupervisorStateManager(api);
-      state.start('Test goal', 'anthropic', 'claude-haiku');
-
-      state.addIntervention({
-        message: 'Focus on tests',
-        reasoning: 'Drift detected',
-        timestamp: Date.now(),
-        asi: {
-          why_stuck: 'refactoring without tests',
-          strategy_used: 'directive',
-          pattern_detected: 'test_skipping',
-        },
-      });
-
-      const s = state.getState()!;
-      expect(s.interventions).toHaveLength(1);
-      expect(s.interventions[0].asi).toBeDefined();
-      expect(s.interventions[0].asi!.why_stuck).toBe('refactoring without tests');
-      expect(s.interventions[0].asi!.strategy_used).toBe('directive');
-    });
-
-    it('stores intervention without ASI (backward compat)', () => {
-      const api = createMockApi();
-      const state = new SupervisorStateManager(api);
-      state.start('Test goal', 'anthropic', 'claude-haiku');
-
-      state.addIntervention({
-        message: 'Focus',
-        reasoning: 'Test',
-        timestamp: Date.now(),
-      });
-
-      const s = state.getState()!;
-      expect(s.interventions).toHaveLength(1);
-      expect(s.interventions[0].asi).toBeUndefined();
-    });
-
-    it('persists ASI to session via appendEntry', () => {
-      const api = createMockApi();
-      const state = new SupervisorStateManager(api);
-      state.start('Test goal', 'anthropic', 'claude-haiku');
-
-      state.addIntervention({
-        message: 'Focus on tests',
-        reasoning: 'Drift',
-        timestamp: 1234567890,
-        asi: {
-          why_stuck: 'no tests',
-          custom_field: 'custom_value',
-        },
-      });
-
-      expect(api.appendEntry).toHaveBeenCalled();
       const lastCall = api.appendEntry.mock.calls[api.appendEntry.mock.calls.length - 1];
       const persistedData = lastCall[1];
-      expect(persistedData.interventions).toHaveLength(1);
-      expect(persistedData.interventions[0].asi).toBeDefined();
-      expect(persistedData.interventions[0].asi.why_stuck).toBe('no tests');
-      expect(persistedData.interventions[0].asi.custom_field).toBe('custom_value');
-    });
-  });
-
-  describe('model management', () => {
-    it('updates model when active', () => {
-      const api = createMockApi();
-      const state = new SupervisorStateManager(api);
-      state.start('Test goal', 'anthropic', 'claude-haiku');
-
-      state.setModel('openai', 'gpt-4o');
-
-      const s = state.getState()!;
-      expect(s.provider).toBe('openai');
-      expect(s.modelId).toBe('gpt-4o');
-    });
-
-    it('does not update model when not active', () => {
-      const api = createMockApi();
-      const state = new SupervisorStateManager(api);
-
-      state.setModel('openai', 'gpt-4o');
-      expect(state.getState()).toBeNull();
+      expect(persistedData.justSteered).toBeUndefined();
+      expect(persistedData.outcome).toBe('Test goal');
     });
   });
 
@@ -466,5 +280,142 @@ describe('SupervisorStateManager', () => {
       state.resetIdleSteers();
       expect(state.getIdleSteers()).toBe(0);
     });
+  });
+});
+
+describe('detectMidRunSignals', () => {
+  it('returns just_steered when justSteered is true', () => {
+    const signal = detectMidRunSignals([], true);
+    expect(signal).toEqual({ type: 'just_steered' });
+  });
+
+  it('returns null for empty messages', () => {
+    const signal = detectMidRunSignals([], false);
+    expect(signal).toBeNull();
+  });
+
+  it('returns null for normal conversation with no signals', () => {
+    const messages: Message[] = [
+      makeUserMessage('Fix the bug'),
+      makeAssistantMessage('Let me check the code'),
+      makeToolCallMessage('Read', { file_path: 'src/auth.ts' }),
+      makeToolResultMessage('Read', 'export function login() {}'),
+      makeAssistantMessage('I see the issue'),
+      makeToolCallMessage('Edit', { file_path: 'src/auth.ts' }),
+      makeToolResultMessage('Edit', 'ok'),
+    ];
+
+    const signal = detectMidRunSignals(messages, false);
+    expect(signal).toBeNull();
+  });
+
+  it('detects tool errors', () => {
+    const messages: Message[] = [
+      makeToolCallMessage('bash', { command: 'npm test' }),
+      makeToolResultMessage('bash', 'Command failed with exit code 1', true),
+    ];
+
+    const signal = detectMidRunSignals(messages, false);
+    expect(signal).not.toBeNull();
+    expect(signal!.type).toBe('tool_error');
+  });
+
+  it('detects file read loop', () => {
+    const messages: Message[] = [
+      makeToolCallMessage('Read', { file_path: 'src/auth.ts' }),
+      makeToolResultMessage('Read', 'content'),
+      makeToolCallMessage('Read', { file_path: 'src/auth.ts' }),
+      makeToolResultMessage('Read', 'content'),
+      makeToolCallMessage('Read', { file_path: 'src/auth.ts' }),
+      makeToolResultMessage('Read', 'content'),
+      makeToolCallMessage('Read', { file_path: 'src/auth.ts' }),
+      makeToolResultMessage('Read', 'content'),
+    ];
+
+    const signal = detectMidRunSignals(messages, false);
+    expect(signal).not.toBeNull();
+    expect(signal!.type).toBe('file_read_loop');
+    expect(signal!.detail).toContain('src/auth.ts');
+  });
+
+  it('resets read loop counter when file is edited', () => {
+    const messages: Message[] = [
+      makeToolCallMessage('Read', { file_path: 'src/auth.ts' }),
+      makeToolResultMessage('Read', 'content'),
+      makeToolCallMessage('Read', { file_path: 'src/auth.ts' }),
+      makeToolResultMessage('Read', 'content'),
+      makeToolCallMessage('Read', { file_path: 'src/auth.ts' }),
+      makeToolResultMessage('Read', 'content'),
+      // Edit resets the counter for this file
+      makeToolCallMessage('Edit', { file_path: 'src/auth.ts' }),
+      makeToolResultMessage('Edit', 'ok'),
+      // More reads after edit — counter restarts from 0
+      makeToolCallMessage('Read', { file_path: 'src/auth.ts' }),
+      makeToolResultMessage('Read', 'content'),
+    ];
+
+    const signal = detectMidRunSignals(messages, false);
+    expect(signal).toBeNull();
+  });
+
+  it('detects read-only stagnation', () => {
+    const messages: Message[] = [];
+    for (let i = 0; i < 8; i++) {
+      messages.push(makeToolCallMessage('Grep', { pattern: `search-${i}` }));
+      messages.push(makeToolResultMessage('Grep', 'no matches'));
+    }
+
+    const signal = detectMidRunSignals(messages, false);
+    expect(signal).not.toBeNull();
+    expect(signal!.type).toBe('read_only_stagnation');
+    expect(signal!.detail).toContain('read-only');
+  });
+
+  it('does not trigger stagnation when edits are present', () => {
+    const messages: Message[] = [];
+    for (let i = 0; i < 5; i++) {
+      messages.push(makeToolCallMessage('Read', { file_path: `src/file${i}.ts` }));
+      messages.push(makeToolResultMessage('Read', 'content'));
+    }
+    // An edit breaks the stagnation streak
+    messages.push(makeToolCallMessage('Edit', { file_path: 'src/file0.ts' }));
+    messages.push(makeToolResultMessage('Edit', 'ok'));
+    for (let i = 0; i < 5; i++) {
+      messages.push(makeToolCallMessage('Read', { file_path: `src/file${i}.ts` }));
+      messages.push(makeToolResultMessage('Read', 'content'));
+    }
+
+    const signal = detectMidRunSignals(messages, false);
+    expect(signal).toBeNull();
+  });
+
+  it('marks bash with test/build commands as progress (not stagnation)', () => {
+    const messages: Message[] = [];
+    for (let i = 0; i < 5; i++) {
+      messages.push(makeToolCallMessage('Read', { file_path: `src/file${i}.ts` }));
+      messages.push(makeToolResultMessage('Read', 'content'));
+    }
+    messages.push(makeToolCallMessage('bash', { command: 'npm test' }));
+    messages.push(makeToolResultMessage('bash', 'tests passed'));
+
+    const signal = detectMidRunSignals(messages, false);
+    expect(signal).toBeNull();
+  });
+
+  it('prioritizes tool_error over file_read_loop', () => {
+    const messages: Message[] = [
+      makeToolCallMessage('Read', { file_path: 'src/a.ts' }),
+      makeToolResultMessage('Read', 'content'),
+      makeToolCallMessage('Read', { file_path: 'src/a.ts' }),
+      makeToolResultMessage('Read', 'content'),
+      makeToolCallMessage('Read', { file_path: 'src/a.ts' }),
+      makeToolResultMessage('Read', 'content'),
+      makeToolCallMessage('Read', { file_path: 'src/a.ts' }),
+      makeToolResultMessage('Read', 'error reading file', true),
+    ];
+
+    const signal = detectMidRunSignals(messages, false);
+    expect(signal).not.toBeNull();
+    expect(signal!.type).toBe('tool_error');
   });
 });

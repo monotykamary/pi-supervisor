@@ -29,8 +29,6 @@ export interface SupervisorState {
   reframeTier?: ReframeTier;
   /** Consecutive agent_end steers; reset on done/stop/new supervision */
   idleSteers?: number;
-  /** Mid-run safety valve counter — events since last mid-run analysis */
-  midRunCounter?: number;
   /** Whether we just steered and should verify on next mid-run event */
   justSteered?: boolean;
 }

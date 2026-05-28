@@ -132,7 +132,6 @@ describe('SupervisorStateManager - compaction survival', () => {
 
       // Ephemeral fields should be reset
       expect(state.getState()?.justSteered).toBe(false);
-      expect(state.getState()?.midRunCounter).toBe(0);
 
       // Non-ephemeral fields should be preserved
       expect(state.getState()?.reframeTier).toBe(1);
@@ -210,7 +209,6 @@ describe('SupervisorStateManager - compaction survival', () => {
 
       // Ephemeral fields should NOT be persisted
       expect(persistedData.justSteered).toBeUndefined();
-      expect(persistedData.midRunCounter).toBeUndefined();
 
       // Non-ephemeral fields should be persisted
       expect(persistedData.outcome).toBe('Test goal');

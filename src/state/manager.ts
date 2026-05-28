@@ -13,9 +13,6 @@ import {
 
 const ENTRY_TYPE = 'supervisor-state';
 
-/** Mid-run safety valve threshold */
-const MID_RUN_THRESHOLD = 8;
-
 export class SupervisorStateManager {
   private state: SupervisorState | null = null;
   private pi: ExtensionAPI;
@@ -34,7 +31,6 @@ export class SupervisorStateManager {
       startedAt: Date.now(),
       reframeTier: 0,
       idleSteers: 0,
-      midRunCounter: 0,
       justSteered: false,
     };
     this.persist();
@@ -59,7 +55,6 @@ export class SupervisorStateManager {
     if (!this.state) return;
     this.state.interventions.push(intervention);
     this.state.justSteered = true;
-    this.state.midRunCounter = 0;
     this.persist();
   }
 
@@ -80,23 +75,6 @@ export class SupervisorStateManager {
 
   getIdleSteers(): number {
     return this.state?.idleSteers ?? 0;
-  }
-
-  incrementMidRunCounter(): void {
-    if (!this.state) return;
-    this.state.midRunCounter = (this.state.midRunCounter ?? 0) + 1;
-  }
-
-  resetMidRunCounter(): void {
-    if (!this.state) return;
-    this.state.midRunCounter = 0;
-  }
-
-  shouldAnalyzeMidRun(): boolean {
-    if (!this.state) return false;
-    if (this.state.justSteered) return true;
-    if ((this.state.midRunCounter ?? 0) >= MID_RUN_THRESHOLD) return true;
-    return false;
   }
 
   setModel(provider: string, modelId: string): void {
@@ -149,7 +127,6 @@ export class SupervisorStateManager {
         this.state = {
           ...loaded,
           justSteered: false,
-          midRunCounter: 0,
         };
         return;
       }
@@ -159,7 +136,7 @@ export class SupervisorStateManager {
 
   persist(): void {
     if (!this.state) return;
-    const { justSteered, midRunCounter, ...toPersist } = this.state;
+    const { justSteered, ...toPersist } = this.state;
     this.pi.appendEntry(ENTRY_TYPE, toPersist);
   }
 }
