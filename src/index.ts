@@ -151,10 +151,8 @@ export default function (pi: ExtensionAPI) {
     if (!state.isActive()) return;
 
     const messages = extractMessages(ctx);
-    const signal = detectMidRunSignals(messages, state.getState()!.justSteered ?? false);
+    const signal = detectMidRunSignals(messages);
     if (!signal) return;
-
-    state.clearJustSteered();
 
     let decision;
     try {

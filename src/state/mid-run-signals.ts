@@ -10,7 +10,7 @@ import { filterNoise } from '../compaction/filter-noise.js';
 import { extractPath } from '../compaction/tool-args.js';
 
 export interface MidRunSignal {
-  type: 'just_steered' | 'tool_error' | 'file_read_loop';
+  type: 'tool_error' | 'file_read_loop';
   detail?: string;
 }
 
@@ -28,12 +28,7 @@ const FILE_READ_TOOLS = new Set(['Read', 'read', 'read_file', 'View']);
  * Detect mid-run signals from the recent conversation tail.
  * Returns the first signal found (ordered by severity), or null if none.
  */
-export function detectMidRunSignals(
-  messages: Message[],
-  justSteered: boolean
-): MidRunSignal | null {
-  if (justSteered) return { type: 'just_steered' };
-
+export function detectMidRunSignals(messages: Message[]): MidRunSignal | null {
   const tail = messages.slice(-SIGNAL_WINDOW);
   if (tail.length === 0) return null;
 

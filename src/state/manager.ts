@@ -31,7 +31,6 @@ export class SupervisorStateManager {
       startedAt: Date.now(),
       reframeTier: 0,
       idleSteers: 0,
-      justSteered: false,
     };
     this.persist();
   }
@@ -54,13 +53,7 @@ export class SupervisorStateManager {
   addIntervention(intervention: SupervisorIntervention): void {
     if (!this.state) return;
     this.state.interventions.push(intervention);
-    this.state.justSteered = true;
     this.persist();
-  }
-
-  clearJustSteered(): void {
-    if (!this.state) return;
-    this.state.justSteered = false;
   }
 
   incrementIdleSteers(): void {
@@ -126,7 +119,6 @@ export class SupervisorStateManager {
         const loaded = (entry as any).data as SupervisorState;
         this.state = {
           ...loaded,
-          justSteered: false,
         };
         return;
       }
@@ -136,7 +128,6 @@ export class SupervisorStateManager {
 
   persist(): void {
     if (!this.state) return;
-    const { justSteered, ...toPersist } = this.state;
-    this.pi.appendEntry(ENTRY_TYPE, toPersist);
+    this.pi.appendEntry(ENTRY_TYPE, this.state);
   }
 }

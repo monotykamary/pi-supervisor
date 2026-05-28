@@ -30,7 +30,6 @@ export interface SupervisorState {
   /** Consecutive agent_end steers; reset on done/stop/new supervision */
   idleSteers?: number;
   /** Whether we just steered and should verify on next mid-run event */
-  justSteered?: boolean;
 }
 
 /** Decision returned by the supervisor LLM */

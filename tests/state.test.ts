@@ -189,7 +189,6 @@ describe('SupervisorStateManager', () => {
       expect(s.provider).toBe('anthropic');
       expect(s.modelId).toBe('claude-haiku');
       expect(s.interventions).toEqual([]);
-      expect(s.justSteered).toBe(false);
       expect(s.idleSteers).toBe(0);
     });
 
@@ -205,7 +204,7 @@ describe('SupervisorStateManager', () => {
   });
 
   describe('interventions', () => {
-    it('adds intervention and marks justSteered', () => {
+    it('adds intervention', () => {
       const api = createMockApi();
       const state = new SupervisorStateManager(api);
       state.start('Test goal', 'anthropic', 'claude-haiku');
@@ -218,19 +217,6 @@ describe('SupervisorStateManager', () => {
 
       const s = state.getState()!;
       expect(s.interventions).toHaveLength(1);
-      expect(s.justSteered).toBe(true);
-    });
-
-    it('clears justSteered flag', () => {
-      const api = createMockApi();
-      const state = new SupervisorStateManager(api);
-      state.start('Test goal', 'anthropic', 'claude-haiku');
-
-      state.addIntervention({ message: 'Steer', reasoning: 'Test', timestamp: Date.now() });
-      expect(state.getState()!.justSteered).toBe(true);
-
-      state.clearJustSteered();
-      expect(state.getState()!.justSteered).toBe(false);
     });
 
     it('does not add intervention when not active', () => {
@@ -243,7 +229,7 @@ describe('SupervisorStateManager', () => {
   });
 
   describe('persistence', () => {
-    it('does not persist justSteered (ephemeral)', () => {
+    it('persists state data', () => {
       const api = createMockApi();
       const state = new SupervisorStateManager(api);
       state.start('Test goal', 'anthropic', 'claude-haiku');
@@ -252,7 +238,6 @@ describe('SupervisorStateManager', () => {
 
       const lastCall = api.appendEntry.mock.calls[api.appendEntry.mock.calls.length - 1];
       const persistedData = lastCall[1];
-      expect(persistedData.justSteered).toBeUndefined();
       expect(persistedData.outcome).toBe('Test goal');
     });
   });
@@ -284,13 +269,8 @@ describe('SupervisorStateManager', () => {
 });
 
 describe('detectMidRunSignals', () => {
-  it('returns just_steered when justSteered is true', () => {
-    const signal = detectMidRunSignals([], true);
-    expect(signal).toEqual({ type: 'just_steered' });
-  });
-
   it('returns null for empty messages', () => {
-    const signal = detectMidRunSignals([], false);
+    const signal = detectMidRunSignals([]);
     expect(signal).toBeNull();
   });
 
@@ -305,7 +285,7 @@ describe('detectMidRunSignals', () => {
       makeToolResultMessage('Edit', 'ok'),
     ];
 
-    const signal = detectMidRunSignals(messages, false);
+    const signal = detectMidRunSignals(messages);
     expect(signal).toBeNull();
   });
 
@@ -315,7 +295,7 @@ describe('detectMidRunSignals', () => {
       makeToolResultMessage('bash', 'Command failed with exit code 1', true),
     ];
 
-    const signal = detectMidRunSignals(messages, false);
+    const signal = detectMidRunSignals(messages);
     expect(signal).toBeNull();
   });
 
@@ -327,7 +307,7 @@ describe('detectMidRunSignals', () => {
       makeToolResultMessage('Edit', 'file not found', true),
     ];
 
-    const signal = detectMidRunSignals(messages, false);
+    const signal = detectMidRunSignals(messages);
     expect(signal).toBeNull();
   });
 
@@ -341,7 +321,7 @@ describe('detectMidRunSignals', () => {
       makeToolResultMessage('Edit', 'file not found', true),
     ];
 
-    const signal = detectMidRunSignals(messages, false);
+    const signal = detectMidRunSignals(messages);
     expect(signal).not.toBeNull();
     expect(signal!.type).toBe('tool_error');
   });
@@ -357,7 +337,7 @@ describe('detectMidRunSignals', () => {
     ];
 
     // Only 1 consecutive error at the tail — the successful Read broke the streak
-    const signal = detectMidRunSignals(messages, false);
+    const signal = detectMidRunSignals(messages);
     expect(signal).toBeNull();
   });
 
@@ -373,7 +353,7 @@ describe('detectMidRunSignals', () => {
       makeToolResultMessage('Read', 'content'),
     ];
 
-    const signal = detectMidRunSignals(messages, false);
+    const signal = detectMidRunSignals(messages);
     expect(signal).not.toBeNull();
     expect(signal!.type).toBe('file_read_loop');
     expect(signal!.detail).toContain('src/auth.ts');
@@ -395,7 +375,7 @@ describe('detectMidRunSignals', () => {
       makeToolResultMessage('Read', 'content'),
     ];
 
-    const signal = detectMidRunSignals(messages, false);
+    const signal = detectMidRunSignals(messages);
     expect(signal).toBeNull();
   });
 
@@ -415,7 +395,7 @@ describe('detectMidRunSignals', () => {
       makeToolResultMessage('Read', 'error', true),
     ];
 
-    const signal = detectMidRunSignals(messages, false);
+    const signal = detectMidRunSignals(messages);
     expect(signal).not.toBeNull();
     expect(signal!.type).toBe('tool_error');
   });

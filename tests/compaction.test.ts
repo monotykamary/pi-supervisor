@@ -130,9 +130,6 @@ describe('SupervisorStateManager - compaction survival', () => {
       const ctx = createMockContext(sessionEntries);
       state.loadFromSession(ctx);
 
-      // Ephemeral fields should be reset
-      expect(state.getState()?.justSteered).toBe(false);
-
       // Non-ephemeral fields should be preserved
       expect(state.getState()?.reframeTier).toBe(1);
       expect(state.getState()?.interventions).toHaveLength(1);
@@ -197,20 +194,15 @@ describe('SupervisorStateManager - compaction survival', () => {
       );
     });
 
-    it('does not persist ephemeral fields', () => {
+    it('persists all state fields', () => {
       const api = createMockApi();
       const state = new SupervisorStateManager(api);
 
       state.start('Test goal', 'anthropic', 'claude-haiku');
-      state.clearJustSteered();
 
       const lastCall = api.appendEntry.mock.calls[api.appendEntry.mock.calls.length - 1];
       const persistedData = lastCall[1];
 
-      // Ephemeral fields should NOT be persisted
-      expect(persistedData.justSteered).toBeUndefined();
-
-      // Non-ephemeral fields should be persisted
       expect(persistedData.outcome).toBe('Test goal');
       expect(persistedData.active).toBe(true);
     });
