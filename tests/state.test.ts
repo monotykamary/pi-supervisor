@@ -319,8 +319,22 @@ describe('detectMidRunSignals', () => {
     expect(signal).toBeNull();
   });
 
-  it('detects consecutive tool errors', () => {
+  it('does not trigger on two consecutive tool errors', () => {
     const messages: Message[] = [
+      makeToolCallMessage('Edit', { file_path: 'src/auth.ts' }),
+      makeToolResultMessage('Edit', 'file not found', true),
+      makeToolCallMessage('Edit', { file_path: 'src/auth.ts' }),
+      makeToolResultMessage('Edit', 'file not found', true),
+    ];
+
+    const signal = detectMidRunSignals(messages, false);
+    expect(signal).toBeNull();
+  });
+
+  it('detects three consecutive tool errors', () => {
+    const messages: Message[] = [
+      makeToolCallMessage('Edit', { file_path: 'src/auth.ts' }),
+      makeToolResultMessage('Edit', 'file not found', true),
       makeToolCallMessage('Edit', { file_path: 'src/auth.ts' }),
       makeToolResultMessage('Edit', 'file not found', true),
       makeToolCallMessage('Edit', { file_path: 'src/auth.ts' }),
@@ -438,9 +452,11 @@ describe('detectMidRunSignals', () => {
       makeToolCallMessage('Read', { file_path: 'src/a.ts' }),
       makeToolResultMessage('Read', 'content'),
       makeToolCallMessage('Read', { file_path: 'src/a.ts' }),
-      makeToolResultMessage('Read', 'error reading file', true),
+      makeToolResultMessage('Read', 'error', true),
       makeToolCallMessage('Read', { file_path: 'src/a.ts' }),
-      makeToolResultMessage('Read', 'error reading file', true),
+      makeToolResultMessage('Read', 'error', true),
+      makeToolCallMessage('Read', { file_path: 'src/a.ts' }),
+      makeToolResultMessage('Read', 'error', true),
     ];
 
     const signal = detectMidRunSignals(messages, false);

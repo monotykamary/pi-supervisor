@@ -61,7 +61,7 @@ export function detectMidRunSignals(
 }
 
 /** How many consecutive tool errors (separated by their tool_call) trigger a signal. */
-const CONSECUTIVE_ERROR_THRESHOLD = 2;
+const CONSECUTIVE_ERROR_THRESHOLD = 3;
 
 function checkToolErrors(blocks: NormalizedBlock[]): MidRunSignal | null {
   let consecutive = 0;
