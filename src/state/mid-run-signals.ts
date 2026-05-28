@@ -18,7 +18,7 @@ export interface MidRunSignal {
 const SIGNAL_WINDOW = 30;
 
 /** Reads of the same file without an edit to that file triggers a loop signal. */
-const FILE_READ_LOOP_THRESHOLD = 4;
+const FILE_READ_LOOP_THRESHOLD = 5;
 
 const FILE_MUTATION_TOOLS = new Set(['Edit', 'Write', 'edit', 'write', 'MultiEdit']);
 
@@ -39,7 +39,7 @@ export function detectMidRunSignals(messages: Message[]): MidRunSignal | null {
 }
 
 /** How many consecutive tool errors (separated by their tool_call) trigger a signal. */
-const CONSECUTIVE_ERROR_THRESHOLD = 3;
+const CONSECUTIVE_ERROR_THRESHOLD = 5;
 
 function checkToolErrors(blocks: NormalizedBlock[]): MidRunSignal | null {
   let consecutive = 0;
