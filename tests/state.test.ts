@@ -399,50 +399,6 @@ describe('detectMidRunSignals', () => {
     expect(signal).toBeNull();
   });
 
-  it('detects read-only stagnation', () => {
-    const messages: Message[] = [];
-    for (let i = 0; i < 8; i++) {
-      messages.push(makeToolCallMessage('Grep', { pattern: `search-${i}` }));
-      messages.push(makeToolResultMessage('Grep', 'no matches'));
-    }
-
-    const signal = detectMidRunSignals(messages, false);
-    expect(signal).not.toBeNull();
-    expect(signal!.type).toBe('read_only_stagnation');
-    expect(signal!.detail).toContain('read-only');
-  });
-
-  it('does not trigger stagnation when edits are present', () => {
-    const messages: Message[] = [];
-    for (let i = 0; i < 5; i++) {
-      messages.push(makeToolCallMessage('Read', { file_path: `src/file${i}.ts` }));
-      messages.push(makeToolResultMessage('Read', 'content'));
-    }
-    // An edit breaks the stagnation streak
-    messages.push(makeToolCallMessage('Edit', { file_path: 'src/file0.ts' }));
-    messages.push(makeToolResultMessage('Edit', 'ok'));
-    for (let i = 0; i < 5; i++) {
-      messages.push(makeToolCallMessage('Read', { file_path: `src/file${i}.ts` }));
-      messages.push(makeToolResultMessage('Read', 'content'));
-    }
-
-    const signal = detectMidRunSignals(messages, false);
-    expect(signal).toBeNull();
-  });
-
-  it('marks bash with test/build commands as progress (not stagnation)', () => {
-    const messages: Message[] = [];
-    for (let i = 0; i < 5; i++) {
-      messages.push(makeToolCallMessage('Read', { file_path: `src/file${i}.ts` }));
-      messages.push(makeToolResultMessage('Read', 'content'));
-    }
-    messages.push(makeToolCallMessage('bash', { command: 'npm test' }));
-    messages.push(makeToolResultMessage('bash', 'tests passed'));
-
-    const signal = detectMidRunSignals(messages, false);
-    expect(signal).toBeNull();
-  });
-
   it('prioritizes consecutive tool_error over file_read_loop', () => {
     const messages: Message[] = [
       makeToolCallMessage('Read', { file_path: 'src/a.ts' }),

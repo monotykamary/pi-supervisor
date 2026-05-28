@@ -10,7 +10,7 @@ import { filterNoise } from '../compaction/filter-noise.js';
 import { extractPath } from '../compaction/tool-args.js';
 
 export interface MidRunSignal {
-  type: 'just_steered' | 'tool_error' | 'file_read_loop' | 'read_only_stagnation';
+  type: 'just_steered' | 'tool_error' | 'file_read_loop';
   detail?: string;
 }
 
@@ -20,26 +20,9 @@ const SIGNAL_WINDOW = 30;
 /** Reads of the same file without an edit to that file triggers a loop signal. */
 const FILE_READ_LOOP_THRESHOLD = 4;
 
-/** Consecutive read-only tool calls without a mutation triggers stagnation. */
-const READ_ONLY_STAGNATION = 8;
-
 const FILE_MUTATION_TOOLS = new Set(['Edit', 'Write', 'edit', 'write', 'MultiEdit']);
 
 const FILE_READ_TOOLS = new Set(['Read', 'read', 'read_file', 'View']);
-
-const READ_ONLY_TOOLS = new Set([
-  'Read',
-  'read',
-  'read_file',
-  'View',
-  'Grep',
-  'grep',
-  'Glob',
-  'glob',
-]);
-
-/** Commands that indicate progress even inside bash. */
-const PROGRESS_CMD_RE = /\b(test|build|install|compile|run)\b/i;
 
 /**
  * Detect mid-run signals from the recent conversation tail.
@@ -57,7 +40,7 @@ export function detectMidRunSignals(
   const blocks = filterNoise(normalize(tail));
   if (blocks.length === 0) return null;
 
-  return checkToolErrors(blocks) ?? checkFileReadLoop(blocks) ?? checkReadOnlyStagnation(blocks);
+  return checkToolErrors(blocks) ?? checkFileReadLoop(blocks);
 }
 
 /** How many consecutive tool errors (separated by their tool_call) trigger a signal. */
@@ -103,35 +86,6 @@ function checkFileReadLoop(blocks: NormalizedBlock[]): MidRunSignal | null {
         if (count >= FILE_READ_LOOP_THRESHOLD) {
           return { type: 'file_read_loop', detail: path };
         }
-      }
-    }
-  }
-
-  return null;
-}
-
-function checkReadOnlyStagnation(blocks: NormalizedBlock[]): MidRunSignal | null {
-  let consecutiveReadOnly = 0;
-
-  for (let i = blocks.length - 1; i >= 0; i--) {
-    const b = blocks[i];
-    if (b.kind !== 'tool_call') continue;
-
-    if (FILE_MUTATION_TOOLS.has(b.name)) break;
-
-    if (b.name === 'bash' || b.name === 'Bash') {
-      const cmd = (b.args.command ?? '') as string;
-      if (PROGRESS_CMD_RE.test(cmd)) break;
-      continue;
-    }
-
-    if (READ_ONLY_TOOLS.has(b.name)) {
-      consecutiveReadOnly++;
-      if (consecutiveReadOnly >= READ_ONLY_STAGNATION) {
-        return {
-          type: 'read_only_stagnation',
-          detail: `${consecutiveReadOnly} read-only calls since last edit`,
-        };
       }
     }
   }
