@@ -309,15 +309,42 @@ describe('detectMidRunSignals', () => {
     expect(signal).toBeNull();
   });
 
-  it('detects tool errors', () => {
+  it('does not trigger on a single tool error', () => {
     const messages: Message[] = [
       makeToolCallMessage('bash', { command: 'npm test' }),
       makeToolResultMessage('bash', 'Command failed with exit code 1', true),
     ];
 
     const signal = detectMidRunSignals(messages, false);
+    expect(signal).toBeNull();
+  });
+
+  it('detects consecutive tool errors', () => {
+    const messages: Message[] = [
+      makeToolCallMessage('Edit', { file_path: 'src/auth.ts' }),
+      makeToolResultMessage('Edit', 'file not found', true),
+      makeToolCallMessage('Edit', { file_path: 'src/auth.ts' }),
+      makeToolResultMessage('Edit', 'file not found', true),
+    ];
+
+    const signal = detectMidRunSignals(messages, false);
     expect(signal).not.toBeNull();
     expect(signal!.type).toBe('tool_error');
+  });
+
+  it('does not trigger when a successful result breaks the error streak', () => {
+    const messages: Message[] = [
+      makeToolCallMessage('Edit', { file_path: 'src/auth.ts' }),
+      makeToolResultMessage('Edit', 'file not found', true),
+      makeToolCallMessage('Read', { file_path: 'src/auth.ts' }),
+      makeToolResultMessage('Read', 'file content'),
+      makeToolCallMessage('Edit', { file_path: 'src/auth.ts' }),
+      makeToolResultMessage('Edit', 'failed again', true),
+    ];
+
+    // Only 1 consecutive error at the tail — the successful Read broke the streak
+    const signal = detectMidRunSignals(messages, false);
+    expect(signal).toBeNull();
   });
 
   it('detects file read loop', () => {
@@ -402,7 +429,7 @@ describe('detectMidRunSignals', () => {
     expect(signal).toBeNull();
   });
 
-  it('prioritizes tool_error over file_read_loop', () => {
+  it('prioritizes consecutive tool_error over file_read_loop', () => {
     const messages: Message[] = [
       makeToolCallMessage('Read', { file_path: 'src/a.ts' }),
       makeToolResultMessage('Read', 'content'),
@@ -410,6 +437,8 @@ describe('detectMidRunSignals', () => {
       makeToolResultMessage('Read', 'content'),
       makeToolCallMessage('Read', { file_path: 'src/a.ts' }),
       makeToolResultMessage('Read', 'content'),
+      makeToolCallMessage('Read', { file_path: 'src/a.ts' }),
+      makeToolResultMessage('Read', 'error reading file', true),
       makeToolCallMessage('Read', { file_path: 'src/a.ts' }),
       makeToolResultMessage('Read', 'error reading file', true),
     ];

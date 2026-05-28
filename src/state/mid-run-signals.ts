@@ -60,11 +60,27 @@ export function detectMidRunSignals(
   return checkToolErrors(blocks) ?? checkFileReadLoop(blocks) ?? checkReadOnlyStagnation(blocks);
 }
 
+/** How many consecutive tool errors (separated by their tool_call) trigger a signal. */
+const CONSECUTIVE_ERROR_THRESHOLD = 2;
+
 function checkToolErrors(blocks: NormalizedBlock[]): MidRunSignal | null {
-  for (let i = blocks.length - 1; i >= Math.max(0, blocks.length - 5); i--) {
+  let consecutive = 0;
+  for (let i = blocks.length - 1; i >= Math.max(0, blocks.length - 10); i--) {
     const b = blocks[i];
     if (b.kind === 'tool_result' && b.isError) {
-      return { type: 'tool_error', detail: `${b.name}: ${b.text.slice(0, 80)}` };
+      consecutive++;
+      if (consecutive >= CONSECUTIVE_ERROR_THRESHOLD) {
+        return { type: 'tool_error', detail: `${b.name}: ${b.text.slice(0, 80)}` };
+      }
+    } else if (b.kind === 'tool_call') {
+      // tool_call between error results is expected — skip it
+      continue;
+    } else if (b.kind === 'tool_result') {
+      // A successful result breaks the streak
+      break;
+    } else {
+      // Any other block (user, assistant, bash) breaks the streak
+      break;
     }
   }
   return null;
