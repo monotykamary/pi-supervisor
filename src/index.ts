@@ -246,7 +246,7 @@ export default function (pi: ExtensionAPI) {
         message: decision.message,
         reframeTier: state.getReframeTier(),
       });
-      pi.sendUserMessage(decision.message);
+      pi.sendUserMessage(decision.message, { deliverAs: 'steer' });
     } else if (decision.action === 'done') {
       state.resetIdleSteers();
       state.resetReframeTier();
