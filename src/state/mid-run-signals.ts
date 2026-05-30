@@ -64,6 +64,19 @@ function checkToolErrors(blocks: NormalizedBlock[]): MidRunSignal | null {
   return null;
 }
 
+/** Build a loop-detection key for a read tool call. Includes line range so that
+ *  reading different portions of the same file (pagination) is not treated as a loop. */
+function readLoopKey(args: Record<string, unknown>): string | null {
+  const path = extractPath(args);
+  if (!path) return null;
+  const offset = args['offset'];
+  const limit = args['limit'];
+  if (offset != null || limit != null) {
+    return `${path}:${offset ?? ''}-${limit ?? ''}`;
+  }
+  return path;
+}
+
 function checkFileReadLoop(blocks: NormalizedBlock[]): MidRunSignal | null {
   const readCounts = new Map<string, number>();
 
@@ -74,12 +87,13 @@ function checkFileReadLoop(blocks: NormalizedBlock[]): MidRunSignal | null {
       const path = extractPath(b.args);
       if (path) readCounts.delete(path);
     } else if (FILE_READ_TOOLS.has(b.name)) {
-      const path = extractPath(b.args);
-      if (path) {
-        const count = (readCounts.get(path) ?? 0) + 1;
-        readCounts.set(path, count);
+      const key = readLoopKey(b.args);
+      if (key) {
+        const count = (readCounts.get(key) ?? 0) + 1;
+        readCounts.set(key, count);
         if (count >= FILE_READ_LOOP_THRESHOLD) {
-          return { type: 'file_read_loop', detail: path };
+          // Report just the file path for the signal detail
+          return { type: 'file_read_loop', detail: extractPath(b.args)! };
         }
       }
     }

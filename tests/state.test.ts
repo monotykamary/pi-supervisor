@@ -411,6 +411,46 @@ describe('detectMidRunSignals', () => {
     expect(signal).toBeNull();
   });
 
+  it('does not trigger file read loop when reading same file with different offsets', () => {
+    const messages: Message[] = [];
+    // Read same file 5 times but each time with a different offset (pagination)
+    for (let i = 0; i < 5; i++) {
+      messages.push(makeToolCallMessage('Read', { file_path: 'src/auth.ts', offset: i * 50 + 1, limit: 50 }));
+      messages.push(makeToolResultMessage('Read', 'content'));
+    }
+
+    const signal = detectMidRunSignals(messages);
+    expect(signal).toBeNull();
+  });
+
+  it('detects file read loop when reading same file with same offset repeatedly', () => {
+    const messages: Message[] = [];
+    // Read same file 5 times with the same offset — actual loop
+    for (let i = 0; i < 5; i++) {
+      messages.push(makeToolCallMessage('Read', { file_path: 'src/auth.ts', offset: 1, limit: 50 }));
+      messages.push(makeToolResultMessage('Read', 'content'));
+    }
+
+    const signal = detectMidRunSignals(messages);
+    expect(signal).not.toBeNull();
+    expect(signal!.type).toBe('file_read_loop');
+    expect(signal!.detail).toContain('src/auth.ts');
+  });
+
+  it('detects file read loop when reading same file without offset repeatedly', () => {
+    const messages: Message[] = [];
+    // Read same file 5 times without any offset — same as before the change
+    for (let i = 0; i < 5; i++) {
+      messages.push(makeToolCallMessage('Read', { file_path: 'src/auth.ts' }));
+      messages.push(makeToolResultMessage('Read', 'content'));
+    }
+
+    const signal = detectMidRunSignals(messages);
+    expect(signal).not.toBeNull();
+    expect(signal!.type).toBe('file_read_loop');
+    expect(signal!.detail).toContain('src/auth.ts');
+  });
+
   it('prioritizes consecutive tool_error over file_read_loop', () => {
     const messages: Message[] = [];
     for (let i = 0; i < 6; i++) {
