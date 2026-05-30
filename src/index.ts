@@ -50,7 +50,7 @@ export function extractThinking(accumulated: string): string {
 function truncateForNotify(message: string, reserveChars: number = 20): string {
   const terminalWidth = process.stdout.columns || 100;
   const maxContentWidth = Math.max(20, terminalWidth - reserveChars);
-  return truncateToWidth(message, maxContentWidth, '…');
+  return truncateToWidth(message.replace(/\r?\n/g, ' '), maxContentWidth, '…');
 }
 
 /** Check if the session has any user messages in its history. */

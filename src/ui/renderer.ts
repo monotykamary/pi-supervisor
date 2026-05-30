@@ -199,7 +199,7 @@ function renderWithState(
             0,
             paddedWidth - prefixWidth - suffixWidth - closeQuoteWidth
           );
-          const rawGoal = snap.outcome;
+          const rawGoal = snap.outcome.replace(/\r?\n/g, ' ');
           const truncatedGoal = truncateToWidth(rawGoal, availableForGoal);
           const goalText = theme.fg('muted', truncatedGoal);
           line = prefix + goalText + goalQuoteClose + suffix;

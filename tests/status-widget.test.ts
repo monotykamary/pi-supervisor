@@ -226,4 +226,23 @@ describe('status-widget', () => {
       expect(ctx.ui.setWidget).toHaveBeenCalledWith('supervisor', undefined);
     });
   });
+
+  describe('goal rendering', () => {
+    it('sanitizes newlines in the goal to keep the header on a single line', () => {
+      const ctx = createMockCtx();
+      const state = createMockState({
+        outcome: 'Fix two bugs\n1. Bug 2 (PRIMARY): PtyTreeRow',
+      });
+
+      updateUI(ctx, widgetState, state, { type: 'watching' });
+
+      const lastCall = ctx.ui.setWidget.mock.calls[ctx.ui.setWidget.mock.calls.length - 1];
+      const widgetFactory = lastCall[1];
+      const widget = widgetFactory(null, mockTheme);
+      const lines = widget.render(100);
+
+      expect(lines.length).toBe(1);
+      expect(lines[0]).toContain('Fix two bugs 1. Bug 2 (PRIMARY): PtyTreeRow');
+    });
+  });
 });
