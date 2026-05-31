@@ -4,10 +4,7 @@
 
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { SupervisorSession } from '../session/supervisor-session.js';
-import { extractMessages } from '../compaction/index.js';
-import { normalize } from '../compaction/normalize.js';
-import { filterNoise } from '../compaction/filter-noise.js';
-import { buildBriefSections, stringifyBrief } from '../compaction/brief.js';
+import { extractMessages, buildCompactionSummary, formatForSupervisor } from '../compaction/index.js';
 
 /** System prompt for inferring an outcome from conversation history. */
 const INFER_OUTCOME_SYSTEM_PROMPT = `You are a goal extraction assistant. Your task is to analyze a conversation between a user and a coding AI assistant, and extract the user's primary desired outcome or goal.
@@ -39,21 +36,15 @@ export async function inferOutcome(
   const messages = extractMessages(ctx);
   if (messages.length === 0) return null;
 
-  // Build a brief transcript for the inference prompt
-  const blocks = filterNoise(normalize(messages));
-  const sections = buildBriefSections(blocks);
-  const briefText = stringifyBrief(sections);
+  // Use the compaction pipeline for structured context (avoids cold prefills)
+  const summary = buildCompactionSummary(messages);
+  const contextText = formatForSupervisor(summary);
 
-  if (!briefText) return null;
+  if (!contextText) return null;
 
-  // Take last portion of the brief for context (keep it focused)
-  const lines = briefText.split('\n');
-  const recentLines = lines.slice(-40);
-  const conversationText = recentLines.join('\n');
+  const userPrompt = `Analyze this conversation summary and extract the user's primary goal or desired outcome:
 
-  const userPrompt = `Analyze this conversation and extract the user's primary goal or desired outcome:
-
-${conversationText}
+${contextText}
 
 What is the specific outcome the user is trying to achieve?`;
 
