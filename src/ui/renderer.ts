@@ -232,6 +232,7 @@ function renderWithState(
         }
 
         const thinkingIndent = stripAnsi(thinkingPrefix).length;
+        const maxContentWidth = Math.max(0, paddedWidth - thinkingIndent);
         const thinkingWords = rawThinking.replace(/[\r\n]+/g, ' ').split(' ');
         const thinkingLines: string[] = [];
         const plainLines: string[] = [];
@@ -240,12 +241,12 @@ function renderWithState(
 
         for (const word of thinkingWords) {
           const testLine = currentPlainLine ? `${currentPlainLine} ${word}` : word;
-          if (testLine.length <= paddedWidth - thinkingIndent) {
+          if (testLine.length <= maxContentWidth) {
             currentPlainLine = testLine;
             currentThinkingLine = currentThinkingLine ? `${currentThinkingLine} ${word}` : word;
           } else {
             if (currentThinkingLine) {
-              thinkingLines.push(thinkingPrefix + theme.fg('dim', currentThinkingLine));
+              thinkingLines.push(truncateToWidth(thinkingPrefix + theme.fg('dim', currentThinkingLine), paddedWidth));
               plainLines.push('  ' + currentPlainLine);
             }
             currentPlainLine = word;
@@ -253,7 +254,7 @@ function renderWithState(
           }
         }
         if (currentThinkingLine) {
-          thinkingLines.push(thinkingPrefix + theme.fg('dim', currentThinkingLine));
+          thinkingLines.push(truncateToWidth(thinkingPrefix + theme.fg('dim', currentThinkingLine), paddedWidth));
           plainLines.push('  ' + currentPlainLine);
         }
 

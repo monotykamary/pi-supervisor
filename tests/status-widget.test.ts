@@ -298,5 +298,57 @@ describe('status-widget', () => {
       expect(allText).toContain('First line');
       expect(allText).toContain('Second line');
     });
+
+    it('truncates thinking lines to terminal width', () => {
+      const ctx = createMockCtx();
+      const state = createMockState({
+        outcome: 'Fix the bug',
+      });
+
+      const longThinking = 'A '.repeat(80) + 'and this word will overflow the terminal width';
+
+      updateUI(ctx, widgetState, state, {
+        type: 'analyzing',
+        thinking: longThinking,
+      });
+
+      const lastCall = ctx.ui.setWidget.mock.calls[ctx.ui.setWidget.mock.calls.length - 1];
+      const widgetFactory = lastCall[1];
+      const widget = widgetFactory(null, mockTheme);
+      const lines = widget.render(40);
+
+      for (const line of lines) {
+        // Each line must fit within paddedWidth (width - 1)
+        const visibleLen = line.replace(/\x1b\[[0-9;]*m/g, '').length;
+        expect(visibleLen).toBeLessThanOrEqual(39);
+      }
+    });
+
+    it('truncates preserved thinking lines to terminal width', () => {
+      const ctx = createMockCtx();
+      const state = createMockState({
+        outcome: 'Fix the bug',
+      });
+
+      const longThinking = 'A '.repeat(80) + 'overflow word';
+
+      updateUI(ctx, widgetState, state, {
+        type: 'analyzing',
+        thinking: longThinking,
+      });
+
+      // Transition to done — preserved lines are re-rendered
+      updateUI(ctx, widgetState, state, { type: 'done' });
+
+      const lastCall = ctx.ui.setWidget.mock.calls[ctx.ui.setWidget.mock.calls.length - 1];
+      const widgetFactory = lastCall[1];
+      const widget = widgetFactory(null, mockTheme);
+      const lines = widget.render(40);
+
+      for (const line of lines) {
+        const visibleLen = line.replace(/\x1b\[[0-9;]*m/g, '').length;
+        expect(visibleLen).toBeLessThanOrEqual(39);
+      }
+    });
   });
 });
