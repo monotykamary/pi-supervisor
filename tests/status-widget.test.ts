@@ -246,4 +246,57 @@ describe('status-widget', () => {
       expect(lines[0]).toContain('Fix two bugs 1. Bug 2 (PRIMARY): PtyTreeRow');
     });
   });
+
+  describe('thinking multiline handling', () => {
+    it('collapses newlines in thinking text to spaces', () => {
+      const ctx = createMockCtx();
+      const state = createMockState({
+        outcome: 'Test goal',
+      });
+
+      updateUI(ctx, widgetState, state, {
+        type: 'analyzing',
+        thinking: 'First line\nSecond line of thinking',
+      });
+
+      const lastCall = ctx.ui.setWidget.mock.calls[ctx.ui.setWidget.mock.calls.length - 1];
+      const widgetFactory = lastCall[1];
+      const widget = widgetFactory(null, mockTheme);
+      const lines = widget.render(100);
+
+      // No line should contain a literal newline
+      for (const line of lines) {
+        expect(line).not.toContain('\n');
+      }
+      // The thinking content should be present as a single wrapped flow
+      const allText = lines.join(' ');
+      expect(allText).toContain('First line');
+      expect(allText).toContain('Second line of thinking');
+    });
+
+    it('collapses CRLF in thinking text', () => {
+      const ctx = createMockCtx();
+      const state = createMockState({
+        outcome: 'Test goal',
+      });
+
+      updateUI(ctx, widgetState, state, {
+        type: 'analyzing',
+        thinking: 'First line\r\nSecond line',
+      });
+
+      const lastCall = ctx.ui.setWidget.mock.calls[ctx.ui.setWidget.mock.calls.length - 1];
+      const widgetFactory = lastCall[1];
+      const widget = widgetFactory(null, mockTheme);
+      const lines = widget.render(100);
+
+      for (const line of lines) {
+        expect(line).not.toContain('\r');
+        expect(line).not.toContain('\n');
+      }
+      const allText = lines.join(' ');
+      expect(allText).toContain('First line');
+      expect(allText).toContain('Second line');
+    });
+  });
 });

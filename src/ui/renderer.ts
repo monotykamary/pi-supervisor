@@ -224,7 +224,7 @@ function renderWithState(
             const visibleCount = Math.max(0, widgetState.lastThinkingLines.length - hideFromBottom);
             const visibleLines = widgetState.lastThinkingLines
               .slice(0, visibleCount)
-              .map((ln) => theme.fg('dim', ln));
+              .map((ln) => truncateToWidth(theme.fg('dim', ln), paddedWidth));
             if (visibleCount === 0) return [l1];
             return [l1, ...visibleLines];
           }
@@ -232,7 +232,7 @@ function renderWithState(
         }
 
         const thinkingIndent = stripAnsi(thinkingPrefix).length;
-        const thinkingWords = rawThinking.split(' ');
+        const thinkingWords = rawThinking.replace(/[\r\n]+/g, ' ').split(' ');
         const thinkingLines: string[] = [];
         const plainLines: string[] = [];
         let currentThinkingLine = '';
