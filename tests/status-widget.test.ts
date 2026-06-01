@@ -105,6 +105,191 @@ describe('status-widget', () => {
       expect(allText).not.toContain('Analysis thinking');
     });
 
+    it('animates thinking away when leaving analyzing for steering (with render cycle)', () => {
+      const ctx = createMockCtx();
+      const state = createMockState();
+
+      // First update: analyzing with thinking
+      updateUI(ctx, widgetState, state, {
+        type: 'analyzing',
+        thinking: 'Analysis thinking that should animate away on steer',
+      });
+
+      // Simulate the TUI render cycle: render populates lastThinkingLines
+      const analyzingCall = ctx.ui.setWidget.mock.calls[ctx.ui.setWidget.mock.calls.length - 1];
+      const analyzingWidget = analyzingCall[1](null, mockTheme);
+      analyzingWidget.render(100);
+
+      // Now transition to steering
+      updateUI(ctx, widgetState, state, {
+        type: 'steering',
+        message: 'Please fix this issue',
+        reframeTier: 0,
+      });
+
+      // After the first animation step, lines should be reduced
+      // (animation starts immediately with no delay for steering)
+      const lastCall = ctx.ui.setWidget.mock.calls[ctx.ui.setWidget.mock.calls.length - 1];
+      const widgetFactory = lastCall[1];
+      const widget = widgetFactory(null, mockTheme);
+      const lines = widget.render(100);
+
+      const allText = lines.join(' ');
+      expect(allText).toContain('steering');
+    });
+
+    it('completes steering animation and clears thinking lines', () => {
+      const ctx = createMockCtx();
+      const state = createMockState();
+      vi.useFakeTimers();
+
+      // First update: analyzing with thinking
+      updateUI(ctx, widgetState, state, {
+        type: 'analyzing',
+        thinking: 'Short thinking',
+      });
+
+      // Simulate the TUI render cycle
+      const analyzingCall = ctx.ui.setWidget.mock.calls[ctx.ui.setWidget.mock.calls.length - 1];
+      const analyzingWidget = analyzingCall[1](null, mockTheme);
+      analyzingWidget.render(100);
+
+      // Transition to steering
+      updateUI(ctx, widgetState, state, {
+        type: 'steering',
+        message: 'Fix this',
+        reframeTier: 0,
+      });
+
+      // Run all animation timers
+      vi.advanceTimersByTime(5000);
+
+      // After animation completes, thinking lines should be cleared
+      expect(widgetState.lastThinkingLines).toEqual([]);
+      expect(widgetState.hiddenFromBottomCount).toBe(0);
+
+      vi.useRealTimers();
+    });
+
+    it('animates thinking away when leaving analyzing for watching (with render cycle)', () => {
+      const ctx = createMockCtx();
+      const state = createMockState();
+
+      // First update: analyzing with thinking
+      updateUI(ctx, widgetState, state, {
+        type: 'analyzing',
+        thinking: 'Analysis thinking that should animate away on watching',
+      });
+
+      // Simulate the TUI render cycle
+      const analyzingCall = ctx.ui.setWidget.mock.calls[ctx.ui.setWidget.mock.calls.length - 1];
+      const analyzingWidget = analyzingCall[1](null, mockTheme);
+      analyzingWidget.render(100);
+
+      // Now transition to watching
+      updateUI(ctx, widgetState, state, { type: 'watching' });
+
+      // After the first animation step, the widget should show watching state
+      const lastCall = ctx.ui.setWidget.mock.calls[ctx.ui.setWidget.mock.calls.length - 1];
+      const widgetFactory = lastCall[1];
+      const widget = widgetFactory(null, mockTheme);
+      const lines = widget.render(100);
+
+      const allText = lines.join(' ');
+      expect(allText).toContain('watching');
+    });
+
+    it('animates thinking away when leaving analyzing for inferring (with render cycle)', () => {
+      const ctx = createMockCtx();
+      const state = createMockState();
+
+      // First update: analyzing with thinking
+      updateUI(ctx, widgetState, state, {
+        type: 'analyzing',
+        thinking: 'Analysis that should animate away before inferring',
+      });
+
+      // Simulate the TUI render cycle
+      const analyzingCall = ctx.ui.setWidget.mock.calls[ctx.ui.setWidget.mock.calls.length - 1];
+      const analyzingWidget = analyzingCall[1](null, mockTheme);
+      analyzingWidget.render(100);
+
+      // Now transition to inferring
+      updateUI(ctx, widgetState, state, { type: 'inferring' });
+
+      // The animation should start; after it completes, the inferring state is shown
+      const allCalls = ctx.ui.setWidget.mock.calls;
+      const lastCall = allCalls[allCalls.length - 1];
+      const widgetFactory = lastCall[1];
+      const widget = widgetFactory(null, mockTheme);
+      const lines = widget.render(100);
+
+      const allText = lines.join(' ');
+      expect(allText).toContain('Inferring');
+    });
+
+    it('completes inferring animation and clears thinking lines', () => {
+      const ctx = createMockCtx();
+      const state = createMockState();
+      vi.useFakeTimers();
+
+      // First update: analyzing with thinking
+      updateUI(ctx, widgetState, state, {
+        type: 'analyzing',
+        thinking: 'Short thinking for inferring test',
+      });
+
+      // Simulate the TUI render cycle
+      const analyzingCall = ctx.ui.setWidget.mock.calls[ctx.ui.setWidget.mock.calls.length - 1];
+      const analyzingWidget = analyzingCall[1](null, mockTheme);
+      analyzingWidget.render(100);
+
+      // Transition to inferring
+      updateUI(ctx, widgetState, state, { type: 'inferring' });
+
+      // Run all animation timers
+      vi.advanceTimersByTime(5000);
+
+      // After animation completes, thinking lines should be cleared
+      expect(widgetState.lastThinkingLines).toEqual([]);
+      expect(widgetState.hiddenFromBottomCount).toBe(0);
+
+      vi.useRealTimers();
+    });
+
+    it('animates thinking away when leaving analyzing for waiting (with render cycle)', () => {
+      const ctx = createMockCtx();
+      const state = createMockState();
+
+      // First update: analyzing with thinking
+      updateUI(ctx, widgetState, state, {
+        type: 'analyzing',
+        thinking: 'Analysis that should animate away before waiting',
+      });
+
+      // Simulate the TUI render cycle
+      const analyzingCall = ctx.ui.setWidget.mock.calls[ctx.ui.setWidget.mock.calls.length - 1];
+      const analyzingWidget = analyzingCall[1](null, mockTheme);
+      analyzingWidget.render(100);
+
+      // Now transition to waiting
+      updateUI(ctx, widgetState, state, {
+        type: 'waiting',
+        message: 'Waiting for 2 subagent(s)...',
+        reframeTier: 0,
+      });
+
+      // The animation should start; after first step, waiting state is shown
+      const allCalls = ctx.ui.setWidget.mock.calls;
+      const lastCall = allCalls[allCalls.length - 1];
+      const widgetFactory = lastCall[1];
+      const widget = widgetFactory(null, mockTheme);
+      const lines = widget.render(100);
+
+      const allText = lines.join(' ');
+      expect(allText).toContain('Waiting');
+    });
+
     it('does not accumulate stale thinking through multiple rapid steers', () => {
       const ctx = createMockCtx();
       const state = createMockState();

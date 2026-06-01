@@ -46,12 +46,13 @@ export function updateUI(
     state.lastThinkingLines = [];
   }
 
-  // When leaving analyzing to done, keep the thinking visible so the done state
-  // shows the full content before eventually animating away.
-  // When leaving analyzing to steering/watching, hide the thinking text immediately.
+  // When leaving analyzing, keep the thinking visible so it can animate away.
+  // For done: shown before delayed clear animation.
+  // For steering/watching: animated away immediately (no delay).
+  // Clear lastThinking when leaving to a non-done action so the render falls back
+  // to preserved lines (for animation) or shows no thinking (no lines to animate).
   if (leavingAnalyzing && action.type !== 'done') {
-    state.lastThinking = ''; // Hide the thinking text
-    // lastThinkingLines is preserved for the animation
+    state.lastThinking = '';
   }
 
   // Always update last state first
@@ -66,8 +67,14 @@ export function updateUI(
     }
   }
 
-  // Handle inferring specially
-  if (action.type === 'inferring') {
+  // Handle inferring specially — but only if there's no thinking to animate away first.
+  // When transitioning from analyzing (with thinking lines visible) to inferring,
+  // we animate the thinking down before showing the inferring state.
+  if (action.type === 'inferring' && !(leavingAnalyzing && state.lastThinkingLines.length > 0)) {
+    // Clear any stale thinking when inferring from a non-analyzing state
+    if (leavingAnalyzing) {
+      state.lastThinking = '';
+    }
     if (state.widgetVisible) {
       const inferState = { outcome: '', interventions: state.lastActiveState?.interventions ?? [] };
       renderWithState(ctx, state, inferState, action, '', 0);
@@ -75,18 +82,43 @@ export function updateUI(
     return;
   }
 
-  // We need the clear animation when the supervisor is inactive and thinking lines
-  // are still visible. The 'done' case is included here because after stop(),
-  // the thinking lines need to be animated away.
+  // We need the clear animation when:
+  // 1. Supervisor is inactive and thinking lines are still visible (done/stop), or
+  // 2. Leaving analyzing with thinking lines to a non-analyzing action (steering/watching).
+  //    This animates the thinking text down instead of vanishing it instantly.
   const needsClearAnimation =
-    !supervisorState?.active &&
     state.lastActiveState &&
-    state.lastThinkingLines.length > 0;
+    state.lastThinkingLines.length > 0 &&
+    (!supervisorState?.active || leavingAnalyzing);
+
+  // Leaving analyzing to any non-analyzing action — animate the thinking text away
+  // immediately (no delay), so it doesn't vanish instantly.
+  // This covers steering, watching, inferring, waiting, etc.
+  if (needsClearAnimation && leavingAnalyzing) {
+    const boundRender: RenderFn = (ctx, snap, action, thinking, hideFromBottom) => {
+      renderWithState(ctx, state, snap, action, thinking, hideFromBottom);
+    };
+    let fallbackAction: WidgetAction;
+    if (action.type === 'steering') {
+      fallbackAction = { type: 'steering', message: '', reframeTier: action.reframeTier };
+    } else if (action.type === 'waiting') {
+      fallbackAction = { type: 'waiting', message: action.message, reframeTier: action.reframeTier };
+    } else if (action.type === 'inferring') {
+      fallbackAction = { type: 'inferring' };
+    } else {
+      const reframeTier = 'reframeTier' in action ? (action.reframeTier ?? 0) : 0;
+      fallbackAction = { type: action.type, reframeTier } as WidgetAction;
+    }
+    state.lastActionType = fallbackAction.type;
+    state.storedAction = fallbackAction;
+    startLineClearAnimation(ctx, state, boundRender);
+    return;
+  }
 
   // When supervisor becomes inactive (after stop), start the clear animation.
   // This handles the 'done' transition: the widget shows all thinking lines,
   // then after CLEAR_DELAY_MS they animate away.
-  if (needsClearAnimation && !leavingAnalyzing) {
+  if (needsClearAnimation) {
     state.clearTimer = setTimeout(() => {
       const boundRender: RenderFn = (ctx, snap, action, thinking, hideFromBottom) => {
         renderWithState(ctx, state, snap, action, thinking, hideFromBottom);

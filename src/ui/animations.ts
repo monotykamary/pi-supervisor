@@ -24,44 +24,68 @@ export function startLineClearAnimation(
 ): void {
   if (!state.lastActiveState || state.lastThinkingLines.length === 0) return;
 
-  const isSteering = state.lastActionType === 'steering';
+  const actionType = state.lastActionType;
+  const isSupervisorDone = actionType === 'done';
   const targetVisibleCount = 0;
+
+  // Build the completion action based on what we're transitioning to
+  const getCompletionAction = (): WidgetAction => {
+    if (actionType === 'steering') {
+      const reframeTier =
+        state.storedAction?.type === 'steering' ? (state.storedAction.reframeTier ?? 0) : 0;
+      return { type: 'steering', message: '', reframeTier };
+    }
+    if (isSupervisorDone) {
+      return { type: 'done', reframeTier: 0 };
+    }
+    if (actionType === 'waiting') {
+      const message =
+        state.storedAction?.type === 'waiting' ? state.storedAction.message : '';
+      const reframeTier =
+        state.storedAction?.type === 'waiting' ? (state.storedAction.reframeTier ?? 0) : 0;
+      return { type: 'waiting', message, reframeTier };
+    }
+    if (actionType === 'inferring') {
+      return { type: 'inferring' };
+    }
+    // watching or other active states
+    const reframeTier =
+      state.storedAction && 'reframeTier' in state.storedAction
+        ? (state.storedAction.reframeTier ?? 0)
+        : 0;
+    return { type: actionType, reframeTier } as WidgetAction;
+  };
 
   const animateStep = () => {
     const currentVisible = state.lastThinkingLines.length - state.hiddenFromBottomCount;
 
     if (currentVisible <= targetVisibleCount) {
-      if (isSteering) {
-        state.lastThinkingLines = [];
-        state.hiddenFromBottomCount = 0;
-        const reframeTier =
-          state.storedAction?.type === 'steering' ? (state.storedAction.reframeTier ?? 0) : 0;
-        renderFn(
-          ctx,
-          state.lastActiveState!,
-          { type: 'steering', message: '', reframeTier },
-          '',
-          0
-        );
-        return;
-      } else {
+      // Animation complete
+      state.lastThinkingLines = [];
+      state.hiddenFromBottomCount = 0;
+      state.lastThinking = '';
+
+      if (isSupervisorDone) {
+        // Done: clear the widget entirely
         state.lastActiveState = null;
-        state.lastThinking = '';
-        state.lastThinkingLines = [];
-        state.hiddenFromBottomCount = 0;
         state.storedAction = null;
         ctx.ui.setWidget(WIDGET_ID, undefined);
-        return;
+      } else if (actionType === 'inferring') {
+        // Inferring: render with empty outcome (no goal yet)
+        const inferSnap = {
+          outcome: '',
+          interventions: state.lastActiveState?.interventions ?? [],
+        };
+        renderFn(ctx, inferSnap, { type: 'inferring' }, '', 0);
+      } else {
+        // Steering/watching/other: render the final state with no thinking
+        renderFn(ctx, state.lastActiveState!, getCompletionAction(), '', 0);
       }
+      return;
     }
 
     state.hiddenFromBottomCount++;
-    const reframeTier =
-      state.storedAction?.type === 'steering' ? (state.storedAction.reframeTier ?? 0) : 0;
-    const fallbackAction: WidgetAction = isSteering
-      ? { type: 'steering', message: '', reframeTier }
-      : { type: 'done', reframeTier: 0 };
-    renderFn(ctx, state.lastActiveState!, fallbackAction, '', state.hiddenFromBottomCount);
+    renderFn(ctx, state.lastActiveState!, getCompletionAction(), '', state.hiddenFromBottomCount);
 
     state.animationTimer = setTimeout(animateStep, ANIMATION_STEP_MS);
   };
