@@ -133,13 +133,13 @@ describe('status-widget', () => {
       expect(allText).toContain('steering');
     });
 
-    it('immediately clears thinking when leaving analyzing for done state', () => {
+    it('keeps thinking visible when leaving analyzing for done state', () => {
       const ctx = createMockCtx();
       const state = createMockState();
 
       updateUI(ctx, widgetState, state, {
         type: 'analyzing',
-        thinking: 'Analysis that should clear on done',
+        thinking: 'Analysis that should remain visible on done',
       });
 
       updateUI(ctx, widgetState, state, { type: 'done' });
@@ -149,10 +149,11 @@ describe('status-widget', () => {
       const widget = widgetFactory(null, mockTheme);
       const lines = widget.render(100);
 
-      expect(lines.length).toBe(1);
+      // Done state should show thinking lines (they animate away later)
+      expect(lines.length).toBeGreaterThan(1);
       const allText = lines.join(' ');
       expect(allText).toContain('done');
-      expect(allText).not.toContain('Analysis that should clear');
+      expect(allText).toContain('Analysis that should remain visible on done');
     });
 
     it('does not flash old thoughts when re-entering analyzing after steering', () => {

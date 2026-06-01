@@ -46,8 +46,10 @@ export function updateUI(
     state.lastThinkingLines = [];
   }
 
-  // When leaving analyzing, always animate the clear (steering, done, or watching)
-  if (leavingAnalyzing) {
+  // When leaving analyzing to done, keep the thinking visible so the done state
+  // shows the full content before eventually animating away.
+  // When leaving analyzing to steering/watching, hide the thinking text immediately.
+  if (leavingAnalyzing && action.type !== 'done') {
     state.lastThinking = ''; // Hide the thinking text
     // lastThinkingLines is preserved for the animation
   }
@@ -73,14 +75,18 @@ export function updateUI(
     return;
   }
 
-  const shouldAnimate = !supervisorState || !supervisorState.active || action.type === 'steering';
-
-  if (
-    shouldAnimate &&
+  // We need the clear animation when the supervisor is inactive and thinking lines
+  // are still visible. The 'done' case is included here because after stop(),
+  // the thinking lines need to be animated away.
+  const needsClearAnimation =
+    !supervisorState?.active &&
     state.lastActiveState &&
-    state.lastThinkingLines.length > 0 &&
-    !leavingAnalyzing
-  ) {
+    state.lastThinkingLines.length > 0;
+
+  // When supervisor becomes inactive (after stop), start the clear animation.
+  // This handles the 'done' transition: the widget shows all thinking lines,
+  // then after CLEAR_DELAY_MS they animate away.
+  if (needsClearAnimation && !leavingAnalyzing) {
     state.clearTimer = setTimeout(() => {
       const boundRender: RenderFn = (ctx, snap, action, thinking, hideFromBottom) => {
         renderWithState(ctx, state, snap, action, thinking, hideFromBottom);
@@ -93,12 +99,13 @@ export function updateUI(
         : { type: 'done', reframeTier: 0 };
     state.lastActionType = fallbackAction.type;
     state.storedAction = fallbackAction;
+    // Render with lastThinkingLines content when lastThinking is empty
     renderWithState(
       ctx,
       state,
       state.lastActiveState,
       fallbackAction,
-      leavingAnalyzing ? '' : state.lastThinking,
+      state.lastThinking,
       state.hiddenFromBottomCount
     );
     return;
@@ -209,18 +216,18 @@ function renderWithState(
         }
         const l1 = truncateToWidth(line, paddedWidth);
 
-        // During animation, hide lines from the bottom
-        if (hideFromBottom > 0 && widgetState.lastThinkingLines.length > 0) {
-          const visibleCount = Math.max(0, widgetState.lastThinkingLines.length - hideFromBottom);
-          const visibleLines = widgetState.lastThinkingLines
-            .slice(0, visibleCount)
-            .map((ln) => theme.fg('dim', ln));
-          return [l1, ...visibleLines];
-        }
-
         if (!rawThinking) {
-          // Don't clear lastThinkingLines here - they may be needed for the clear animation.
-          // They'll be cleared by the animation completion or when supervisor becomes inactive.
+          // No live thinking text — render from preserved lines for display/animation
+          // (e.g. after the supervisor is done, lastThinking is empty but lastThinkingLines
+          // holds the previously rendered lines for display/animation).
+          if (widgetState.lastThinkingLines.length > 0) {
+            const visibleCount = Math.max(0, widgetState.lastThinkingLines.length - hideFromBottom);
+            const visibleLines = widgetState.lastThinkingLines
+              .slice(0, visibleCount)
+              .map((ln) => theme.fg('dim', ln));
+            if (visibleCount === 0) return [l1];
+            return [l1, ...visibleLines];
+          }
           return [l1];
         }
 
