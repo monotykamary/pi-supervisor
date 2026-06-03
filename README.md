@@ -1,6 +1,17 @@
-# pi-supervisor
+<div align="center">
 
-A [pi](https://pi.dev) extension that supervises the coding agent and steers it toward a defined outcome. It observes every conversation turn, injects guiding messages when the agent drifts, and signals when the goal is reached — like a tech lead watching over a dev's shoulder.
+# 🧠 pi-supervisor
+
+**Intelligent supervision for [pi](https://github.com/earendil-works/pi-coding-agent)**
+
+_Observe every turn, steer when the agent drifts, signal when the goal is reached._
+
+[![pi extension](https://img.shields.io/badge/pi-extension-blueviolet)](https://github.com/earendil-works/pi-coding-agent)
+[![license](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
+
+</div>
+
+---
 
 > A supervisor as the intelligent overseer keeping the agent on track.
 
