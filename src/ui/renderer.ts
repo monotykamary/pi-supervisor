@@ -56,11 +56,15 @@ export function updateUI(
   }
 
   // Always update last state first
-  if (supervisorState?.active) {
-    state.lastActiveState = {
-      outcome: supervisorState.outcome,
-      interventions: [...supervisorState.interventions],
-    };
+  // For 'done', supervisorState may already be inactive (stopped before this call),
+  // so we also capture state on that transition.
+  if (supervisorState?.active || action.type === 'done') {
+    if (supervisorState) {
+      state.lastActiveState = {
+        outcome: supervisorState.outcome,
+        interventions: [...supervisorState.interventions],
+      };
+    }
     state.lastActionType = action.type;
     if (action.type === 'analyzing' && action.thinking) {
       state.lastThinking = action.thinking;
@@ -83,18 +87,20 @@ export function updateUI(
   }
 
   // We need the clear animation when:
-  // 1. Supervisor is inactive and thinking lines are still visible (done/stop), or
+  // 1. Supervisor is inactive and thinking lines are still visible (stop), or
   // 2. Leaving analyzing with thinking lines to a non-analyzing action (steering/watching).
   //    This animates the thinking text down instead of vanishing it instantly.
+  // 3. Done action — always show "✓ done" briefly before clearing, even without thinking.
+  const hasThinkingToAnimate = state.lastActiveState && state.lastThinkingLines.length > 0;
+  const isDoneTransition = action.type === 'done' && state.lastActiveState;
   const needsClearAnimation =
-    state.lastActiveState &&
-    state.lastThinkingLines.length > 0 &&
-    (!supervisorState?.active || leavingAnalyzing);
+    (hasThinkingToAnimate && (!supervisorState?.active || leavingAnalyzing)) ||
+    isDoneTransition;
 
-  // Leaving analyzing to any non-analyzing action — animate the thinking text away
-  // immediately (no delay), so it doesn't vanish instantly.
-  // This covers steering, watching, inferring, waiting, etc.
-  if (needsClearAnimation && leavingAnalyzing) {
+  // Leaving analyzing to a non-done, non-analyzing action — animate the thinking
+  // text away immediately (no delay), so it doesn't vanish instantly.
+  // For 'done', use the delayed clear path instead so "✓ done" stays visible briefly.
+  if (needsClearAnimation && leavingAnalyzing && !isDoneTransition) {
     const boundRender: RenderFn = (ctx, snap, action, thinking, hideFromBottom) => {
       renderWithState(ctx, state, snap, action, thinking, hideFromBottom);
     };
@@ -135,7 +141,7 @@ export function updateUI(
     renderWithState(
       ctx,
       state,
-      state.lastActiveState,
+      state.lastActiveState!,
       fallbackAction,
       state.lastThinking,
       state.hiddenFromBottomCount
@@ -144,6 +150,8 @@ export function updateUI(
   }
 
   if (!supervisorState || !supervisorState.active) {
+    // Don't clear if a done clear animation is scheduled — it handles the teardown.
+    if (state.clearTimer || state.animationTimer) return;
     state.lastThinkingLines = [];
     ctx.ui.setWidget(WIDGET_ID, undefined);
     return;

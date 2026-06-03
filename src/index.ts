@@ -250,10 +250,10 @@ export default function (pi: ExtensionAPI) {
     } else if (decision.action === 'done') {
       state.resetIdleSteers();
       state.resetReframeTier();
+      // Show 'done' with the outcome still visible before stopping
       updateUI(ctx, widgetState, state.getState(), { type: 'done' });
       state.stop();
       disposeSession();
-      updateUI(ctx, widgetState, state.getState());
     } else {
       updateUI(ctx, widgetState, state.getState(), {
         type: 'watching',

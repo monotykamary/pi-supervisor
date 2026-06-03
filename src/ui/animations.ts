@@ -22,10 +22,11 @@ export function startLineClearAnimation(
   state: WidgetState,
   renderFn: RenderFn
 ): void {
-  if (!state.lastActiveState || state.lastThinkingLines.length === 0) return;
+  if (!state.lastActiveState) return;
 
   const actionType = state.lastActionType;
   const isSupervisorDone = actionType === 'done';
+  const hasThinkingLines = state.lastThinkingLines.length > 0;
   const targetVisibleCount = 0;
 
   // Build the completion action based on what we're transitioning to
@@ -59,7 +60,8 @@ export function startLineClearAnimation(
   const animateStep = () => {
     const currentVisible = state.lastThinkingLines.length - state.hiddenFromBottomCount;
 
-    if (currentVisible <= targetVisibleCount) {
+    // No thinking lines: skip straight to completion (clear or final render)
+    if (!hasThinkingLines || currentVisible <= targetVisibleCount) {
       // Animation complete
       state.lastThinkingLines = [];
       state.hiddenFromBottomCount = 0;
