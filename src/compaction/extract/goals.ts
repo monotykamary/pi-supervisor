@@ -10,9 +10,14 @@ const TASK_RE =
 
 const NOISE_SHORT_RE = /^(ok|yes|no|sure|yeah|yep|go|hi|hey|thx|thanks|ok\b.*|y|n|k)\s*[.!?]*$/i;
 
+// Reject lines that are clearly not user goals (pasted output, code, paths, tool dumps)
+// or meta-prompt boilerplate (command templates like `/issues` that start with "For each issue:"
+// followed by numbered "Read the issue in full..." steps).
 const NON_GOAL_RE =
   /^\s*[\[│├└─╭╰]|```|^\s*(=[A-Z]+\(|function |const |let |var |import |export |class )|^(https?:|file:|\/[A-Za-z])|\\n|^\s*For each\b|\bin full\b[^\n]*\b(comments|issue|issues|PRs?|linked)\b/;
 
+// Signals that the rest of the user message is a command template (e.g. /issues),
+// in which case we should stop collecting goals at the signal line.
 const TEMPLATE_SIGNAL_RE =
   /^\s*(For each\b|Do NOT implement\b|Analyze and propose\b|If Task\/context\b|Output:\s*$)/i;
 
@@ -35,6 +40,8 @@ const isSubstantiveGoal = (text: string): boolean => {
   return true;
 };
 
+// Test scope-change / task intent only on the leading portion of a user block
+// so that pasted outputs below the actual instruction do not trigger matches.
 const LEADING_CHARS = 200;
 
 export const extractGoals = (blocks: NormalizedBlock[]): string[] => {
@@ -63,6 +70,7 @@ export const extractGoals = (blocks: NormalizedBlock[]): string[] => {
     }
   }
 
+  // Only emit the [Scope change] marker when we actually captured bullets.
   if (latestScopeChange && latestScopeChange.length > 0) {
     goals.push('[Scope change]', ...latestScopeChange);
   }

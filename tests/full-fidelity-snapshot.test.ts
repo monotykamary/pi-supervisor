@@ -153,7 +153,7 @@ describe('Compaction Pipeline', () => {
       expect(summary.sessionGoal).toBeDefined();
       expect(summary.briefTranscript).toBeDefined();
       expect(summary.outstandingContext).toBeDefined();
-      expect(summary.currentStatus).toBeDefined();
+      expect(summary.transcriptEntries).toBeDefined();
       expect(summary.filesAndChanges).toBeDefined();
     });
 

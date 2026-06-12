@@ -1,6 +1,9 @@
+/** Shared skill-tag collapse utilities */
+
 const SKILL_TAG_RE = /^-?\s*<skill\s+name="([^"]+)"/;
 const SKILL_CLOSE_RE = /^-?\s*<\/skill>/;
 
+/** Collapse skill tags in an array of lines — dedup by name, drop all content inside block */
 export const collapseSkillLines = (lines: string[]): string[] => {
   const result: string[] = [];
   const seenSkills = new Set<string>();
@@ -26,6 +29,7 @@ export const collapseSkillLines = (lines: string[]): string[] => {
   return result;
 };
 
+/** Collapse <skill name="X" ...>...</skill> blocks in raw text */
 const SKILL_BLOCK_RE = /<skill\s+name="([^"]+)"[^>]*>[\s\S]*?(?:<\/skill>|$)/g;
 export const collapseSkillText = (text: string): string =>
   text.replace(SKILL_BLOCK_RE, (_, name) => `[skill: ${name}]`);

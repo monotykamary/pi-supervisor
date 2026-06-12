@@ -1,6 +1,7 @@
 import type { NormalizedBlock } from '../types';
 import { clip, nonEmptyLines } from '../content';
 
+// Tightened patterns: require a clear preference construction, not bare keywords.
 const PREF_PATTERNS = [
   /\bprefer(?:s|red|ring)?\s+\w/i,
   /\bdon'?t want\b/i,
@@ -22,6 +23,7 @@ export const extractPreferences = (blocks: NormalizedBlock[]): string[] => {
       const trimmed = line.trim();
       if (!trimmed || trimmed.length < 5) continue;
       if (trimmed.length > 200) continue;
+      // Reject questions.
       if (trimmed.endsWith('?') || trimmed.includes('?...')) continue;
       if (!PREF_PATTERNS.some((p) => p.test(trimmed))) continue;
 
@@ -31,6 +33,7 @@ export const extractPreferences = (blocks: NormalizedBlock[]): string[] => {
       seen.add(key);
       prefs.push(clipped);
 
+      // Cap per user block to avoid pasting long rule lists as many prefs.
       if (++perBlock >= 1) break;
     }
   }
@@ -38,7 +41,14 @@ export const extractPreferences = (blocks: NormalizedBlock[]): string[] => {
   return prefs.slice(0, 10);
 };
 
-export const dedupPreferencesAgainstGoals = (prefs: string[], goals: string[]): string[] => {
+/**
+ * Remove preferences that duplicate goals (case-insensitive, trimmed).
+ * Called by `buildSections` so that the two sections do not overlap.
+ */
+export const dedupPreferencesAgainstGoals = (
+  prefs: string[],
+  goals: string[],
+): string[] => {
   const norm = (s: string) => s.trim().toLowerCase();
   const goalSet = new Set(goals.map(norm));
   return prefs.filter((p) => !goalSet.has(norm(p)));
