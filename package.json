@@ -1,6 +1,6 @@
 {
   "name": "pi-supervisor",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "A pi extension that supervises the chat and steers it towards a defined outcome",
   "author": "tintinweb (forked by monotykamary)",
   "license": "MIT",
@@ -36,7 +36,6 @@
   "peerDependencies": {
     "@earendil-works/pi-ai": ">=0.74.0",
     "@earendil-works/pi-coding-agent": ">=0.74.0",
-    "@earendil-works/pi-tui": ">=0.74.0",
     "@sinclair/typebox": "0.34.49"
   },
   "devDependencies": {
@@ -49,7 +48,8 @@
     "simple-git-hooks": "2.13.1",
     "standard-version": "9.5.0",
     "typescript": "6.0.3",
-    "vitest": "4.1.7"
+    "vitest": "4.1.7",
+    "@earendil-works/pi-tui": "0.79.4"
   },
   "scripts": {
     "test": "vitest run",
