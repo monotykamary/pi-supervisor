@@ -9,11 +9,10 @@
 
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { homedir } from 'node:os';
+import { getAgentDir } from '@earendil-works/pi-coding-agent';
 
 const SUPERVISOR_MD = 'SUPERVISOR.md';
 const CONFIG_DIR = '.pi';
-const GLOBAL_AGENT_DIR = join(homedir(), '.pi', 'agent');
 
 /** Built-in fallback system prompt. */
 const BUILTIN_SYSTEM_PROMPT = `You are a supervisor monitoring a coding AI assistant conversation.
@@ -117,7 +116,7 @@ export function loadSystemPrompt(cwd: string): { prompt: string; source: string 
     return { prompt: readFileSync(projectPath, 'utf-8').trim(), source: projectPath };
   }
 
-  const globalPath = join(GLOBAL_AGENT_DIR, SUPERVISOR_MD);
+  const globalPath = join(getAgentDir(), SUPERVISOR_MD);
   if (existsSync(globalPath)) {
     return { prompt: readFileSync(globalPath, 'utf-8').trim(), source: globalPath };
   }

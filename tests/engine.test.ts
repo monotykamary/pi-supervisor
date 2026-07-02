@@ -11,12 +11,6 @@ vi.mock('node:fs', async () => {
   };
 });
 
-vi.mock('node:os', async () => {
-  return {
-    homedir: () => '/home/test',
-  };
-});
-
 import { existsSync, readFileSync } from 'node:fs';
 import {
   loadSystemPrompt,
@@ -28,6 +22,11 @@ import { SupervisorSession } from '../src/session/supervisor-session.js';
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.stubEnv('PI_CODING_AGENT_DIR', '/home/test/.pi/agent');
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
 });
 
 describe('loadSystemPrompt', () => {
