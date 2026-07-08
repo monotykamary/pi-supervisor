@@ -1,12 +1,19 @@
 /**
- * model-picker — wraps pi's internal ModelSelectorComponent for use in
- * the /supervise model command. Shows the same model selector the user
- * sees when pressing Ctrl+P in pi, with search and API-key availability.
+ * model-picker — opens the supervisor's interactive model selector.
+ *
+ * Uses our own SupervisorModelSelectorComponent (a copy of pi-core's
+ * ModelSelectorComponent) so the supervisor picker has the same look and
+ * feel as pi's /model selector — DynamicBorder top/bottom, search, scope
+ * toggle, navigation — while keeping the choice isolated from pi's global
+ * default model. Selection respects pi-model-sort's last-used ordering.
+ *
+ * Returns the selected Model, or null if the user cancelled. The caller
+ * decides what to do with the choice (e.g. save to supervisor-config.json).
  */
 
-import { ModelSelectorComponent, SettingsManager } from '@earendil-works/pi-coding-agent';
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 import type { Model } from '@earendil-works/pi-ai';
+import { SupervisorModelSelectorComponent } from './model-settings-selector.js';
 
 /**
  * Open the interactive model picker.
@@ -17,22 +24,21 @@ export async function pickModel(
   currentProvider?: string,
   currentModelId?: string
 ): Promise<Model<any> | null> {
-  // Resolve the currently-selected supervisor model (to pre-highlight it)
+  // Resolve the currently-selected supervisor model (to pre-highlight it).
+  // Falls back to undefined when the provider/modelId is unknown — the
+  // selector handles an undefined current model gracefully.
   const currentModel =
     currentProvider && currentModelId
       ? ctx.modelRegistry.find(currentProvider, currentModelId)
       : undefined;
 
-  // Minimal in-memory settings — we only need the selector, not persistence
-  const settingsManager = SettingsManager.inMemory();
-
-  return ctx.ui.custom<Model<any> | null>((tui, _theme, _kb, done) => {
-    const component = new ModelSelectorComponent(
+  return ctx.ui.custom<Model<any> | null>((tui, theme, _kb, done) => {
+    const component = new SupervisorModelSelectorComponent(
       tui,
+      theme,
       currentModel,
-      settingsManager,
       ctx.modelRegistry,
-      [], // no scoped-model cycling — we want the full model list
+      [], // no scoped-model cycling — show the full available model list
       (model) => done(model),
       () => done(null)
     );

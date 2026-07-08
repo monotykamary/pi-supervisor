@@ -20,7 +20,7 @@ import { inferOutcome } from './core/inference.js';
 import { loadSystemPrompt } from './core/prompt-loader.js';
 import { updateUI, toggleWidget } from './ui/renderer.js';
 import { pickModel } from './ui/model-picker.js';
-import { loadGlobalModel } from './global-config.js';
+import { loadGlobalModel, saveGlobalModel } from './global-config.js';
 import { disposeSession } from './session/client.js';
 import { Type } from '@sinclair/typebox';
 import { checkChildPiProcesses, waitForSubagents } from './subagent-detector.js';
@@ -266,6 +266,15 @@ export default function (pi: ExtensionAPI) {
 
   pi.registerCommand('supervise', {
     description: 'Supervise the chat toward a desired outcome (/supervise or /supervise <outcome>)',
+    getArgumentCompletions(prefix: string) {
+      const subcommands = [
+        { value: 'model', label: 'model', description: 'Pick the supervisor model' },
+        { value: 'stop', label: 'stop', description: 'Stop active supervision' },
+        { value: 'widget', label: 'widget', description: 'Toggle the status widget' },
+      ];
+      const matches = subcommands.filter((s) => s.value.startsWith(prefix));
+      return matches.length > 0 ? matches : null;
+    },
     handler: async (args, ctx) => {
       currentCtx = ctx;
       const trimmed = args?.trim() ?? '';
@@ -291,6 +300,41 @@ export default function (pi: ExtensionAPI) {
         disposeSession();
         updateUI(ctx, widgetState, state.getState());
         ctx.ui.notify('Supervisor stopped.', 'info');
+        return;
+      }
+
+      // /supervise model — pick the supervisor model and persist it to
+      // <cwd>/.pi/supervisor-config.json. Pre-highlights the model that the
+      // supervisor would currently use (active state > config > chat model).
+      // If supervision is active, the live session model is updated too.
+      if (trimmed === 'model') {
+        const existing = state.getState();
+        const globalModel = loadGlobalModel();
+        const sessionModel = ctx.model;
+        const currentProvider =
+          existing?.provider ?? globalModel?.provider ?? sessionModel?.provider;
+        const currentModelId = existing?.modelId ?? globalModel?.modelId ?? sessionModel?.id;
+
+        const picked = await pickModel(ctx, currentProvider, currentModelId);
+        if (!picked) {
+          ctx.ui.notify('Supervisor model selection cancelled.', 'info');
+          return;
+        }
+
+        const configPath = saveGlobalModel(ctx.cwd, {
+          provider: picked.provider,
+          modelId: picked.id,
+        });
+
+        if (state.isActive() && existing) {
+          state.setModel(picked.provider, picked.id);
+          updateUI(ctx, widgetState, state.getState());
+        }
+
+        ctx.ui.notify(
+          `Supervisor model set to ${picked.provider}/${picked.id} (saved to ${configPath}).`,
+          'info'
+        );
         return;
       }
 

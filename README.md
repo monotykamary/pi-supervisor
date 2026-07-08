@@ -59,12 +59,13 @@ pi -e ~/projects/pi-supervisor/src/index.ts
 
 ## Commands
 
-| Command                | Description                               |
-| ---------------------- | ----------------------------------------- |
-| `/supervise`           | Auto-infer goal from conversation history |
-| `/supervise <outcome>` | Start supervising with explicit goal      |
-| `/supervise stop`      | Stop active supervision                   |
-| `/supervise widget`    | Toggle the status widget on/off           |
+| Command                | Description                                              |
+| ---------------------- | -------------------------------------------------------- |
+| `/supervise`           | Auto-infer goal from conversation history                |
+| `/supervise <outcome>` | Start supervising with explicit goal                     |
+| `/supervise model`     | Pick the supervisor model (opens the model selector TUI) |
+| `/supervise stop`      | Stop active supervision                                  |
+| `/supervise widget`    | Toggle the status widget on/off                          |
 
 ### Examples
 
@@ -74,6 +75,8 @@ pi -e ~/projects/pi-supervisor/src/index.ts
 /supervise Refactor the auth module to use dependency injection and add 90% test coverage
 
 /supervise stop
+
+/supervise model
 ```
 
 The agent can also initiate supervision itself by calling the `start_supervision` tool — useful when it recognises a task needs goal tracking. The tool uses the global config model or active chat model; the AI cannot specify a model. Once active, supervision is locked: only the user can change or stop it.
@@ -178,7 +181,9 @@ The supervisor runs on a **separate model** — it can be a cheaper/faster model
 2. `.pi/supervisor-config.json` in the project root (saved when you pick a model)
 3. Active chat model (`ctx.model`) — so it works out of the box with no configuration
 
-Change at any time by running `/supervise <goal>` with a different model active, or delete `.pi/supervisor-config.json` to reset.
+Change the supervisor model with `/supervise model` — it opens a copy of pi's own `/model` selector (DynamicBorder top/bottom, fuzzy search, all/scoped toggle) and saves the choice to `.pi/supervisor-config.json`. If supervision is already active, the live session model is updated too. Alternatively, start `/supervise <goal>` with a different chat model active, or delete `.pi/supervisor-config.json` to reset.
+
+> **Works with [pi-model-sort](https://github.com/monotykamary/pi-model-sort):** the `/supervise model` picker reads pi-model-sort's last-used timestamps (`~/.pi/agent/extensions/pi-model-sort.json`) and lists models in the same recency order you see in pi's `/model` selector. With pi-model-sort absent or unused, it falls back to pi's default provider order. Selecting a model does **not** change your main chat model — the supervisor keeps its own.
 
 ## Focus and Goal Discipline
 
@@ -323,7 +328,9 @@ src/
     renderer.ts         # Widget rendering and footer management
     animations.ts       # Thought clearing animations
     types.ts            # Widget state types
-    model-picker.ts     # Interactive model picker
+    model-picker.ts      # Interactive model picker (opens the selector)
+    model-settings-selector.ts # Copied pi-core ModelSelectorComponent for the supervisor
+    model-sort.ts        # pi-model-sort last-used integration
   global-config.ts      # .pi/supervisor-config.json read/write
 ```
 

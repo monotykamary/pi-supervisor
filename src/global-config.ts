@@ -7,7 +7,7 @@
  * Removed: sensitivity (now automatic)
  */
 
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const CONFIG_DIR = '.pi';
@@ -35,4 +35,31 @@ export function loadGlobalModel(): { provider: string; modelId: string } | null 
     // ignore parse errors
   }
   return null;
+}
+
+/**
+ * Save the supervisor model config to <cwd>/.pi/supervisor-config.json,
+ * preserving any other keys already present. Creates the .pi directory if
+ * missing. Returns the written config path.
+ */
+export function saveGlobalModel(cwd: string, model: { provider: string; modelId: string }): string {
+  const dir = join(cwd, CONFIG_DIR);
+  const configPath = join(dir, CONFIG_FILE);
+
+  let existing: SupervisorConfig = {};
+  if (existsSync(configPath)) {
+    try {
+      existing = JSON.parse(readFileSync(configPath, 'utf-8')) as SupervisorConfig;
+    } catch {
+      // ignore parse errors — start fresh
+    }
+  }
+
+  if (!existsSync(dir)) {
+    mkdirSync(dir, { recursive: true });
+  }
+
+  const merged: SupervisorConfig = { ...existing, model };
+  writeFileSync(configPath, JSON.stringify(merged, null, 2) + '\n', 'utf-8');
+  return configPath;
 }
