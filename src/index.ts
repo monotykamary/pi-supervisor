@@ -109,7 +109,7 @@ export default function (pi: ExtensionAPI) {
   });
 
   // ---- After compaction: reload state and continue if agent is working ----
-  pi.on('session_compact', async (_event, ctx) => {
+  pi.on('session_compact', async (event, ctx) => {
     currentCtx = ctx;
     state.loadFromSession(ctx);
 
@@ -118,7 +118,11 @@ export default function (pi: ExtensionAPI) {
       return;
     }
 
-    if (ctx.isIdle()) {
+    // Skip the clear-on-idle teardown when an overflow retry is pending
+    // (event.willRetry). The aborted turn resumes after compaction, so
+    // agent_settled will fire again with the full resumed run and the
+    // supervision loop should stay attached.
+    if (ctx.isIdle() && !event.willRetry) {
       state.stop();
       disposeSession();
       ctx.ui.notify('Supervision cleared: compaction complete, agent idle', 'info');
