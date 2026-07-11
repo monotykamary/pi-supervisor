@@ -16,5 +16,11 @@ export type NormalizedBlock =
   | { kind: 'assistant'; text: string; sourceIndex?: number }
   | { kind: 'tool_call'; name: string; args: Record<string, unknown>; sourceIndex?: number }
   | { kind: 'tool_result'; name: string; text: string; isError: boolean; sourceIndex?: number }
-  | { kind: 'bash'; command: string; output: string; exitCode: number | undefined; sourceIndex?: number }
+  | {
+      kind: 'bash';
+      command: string;
+      output: string;
+      exitCode: number | undefined;
+      sourceIndex?: number;
+    }
   | { kind: 'thinking'; text: string; redacted: boolean; sourceIndex?: number };

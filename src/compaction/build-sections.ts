@@ -45,7 +45,8 @@ const TSC_ERROR_RE = /error TS\d+:.+/;
 const TEST_FAIL_RE = /(?:FAIL|✗|✘|×)\s|(\d+)\s+(?:failed|failure|failing)/i;
 
 // Empty grep/search result indicators
-const EMPTY_RESULT_RE = /^(?:No matches? found\.?|No files? matched\.?|0 results?|No results?\.?)$/i;
+const EMPTY_RESULT_RE =
+  /^(?:No matches? found\.?|No files? matched\.?|0 results?|No results?\.?)$/i;
 
 // Maximum characters of bash output to scan for error patterns.
 // Compiler/test errors almost always appear near the start of output;
@@ -73,9 +74,7 @@ const priorityTag = (item: string): string => {
 };
 
 // Write-tool names used for resolution detection
-const FILE_EDIT_TOOLS = new Set([
-  'Edit', 'Write', 'edit', 'write', 'MultiEdit',
-]);
+const FILE_EDIT_TOOLS = new Set(['Edit', 'Write', 'edit', 'write', 'MultiEdit']);
 
 /** Extract file path from a [tsc] error line like "src/auth.ts(5,18): error TS2304: ..." */
 const extractTscFile = (item: string): string | null => {
@@ -84,7 +83,11 @@ const extractTscFile = (item: string): string | null => {
 };
 
 /** Check if a tsc error's file was edited at a position after the error. */
-const isTscResolved = (file: string, tailIdx: number, editPositions: Map<number, Set<string>>): boolean => {
+const isTscResolved = (
+  file: string,
+  tailIdx: number,
+  editPositions: Map<number, Set<string>>
+): boolean => {
   for (const [pos, files] of editPositions) {
     if (pos > tailIdx && files.has(file)) return true;
   }
@@ -110,11 +113,17 @@ const extractOutstandingContext = (blocks: NormalizedBlock[]): string[] => {
 
     // 1. Bash non-zero exit codes (the exitCode field is already captured but was unused)
     if (b.kind === 'bash' && b.exitCode !== undefined && b.exitCode !== 0) {
-      const cmd = b.command.split('\n').map(l => l.trim()).filter(Boolean)[0] ?? b.command;
+      const cmd =
+        b.command
+          .split('\n')
+          .map((l) => l.trim())
+          .filter(Boolean)[0] ?? b.command;
       const cmdDisplay = cmd.length > 80 ? cmd.slice(0, 77) + '...' : cmd;
       const outLine = firstLine(b.output, 120);
       const errTag = `exit ${b.exitCode}`;
-      push(`[bash:${errTag}] ${cmdDisplay}${outLine && outLine !== cmdDisplay ? ` → ${outLine}` : ''}`);
+      push(
+        `[bash:${errTag}] ${cmdDisplay}${outLine && outLine !== cmdDisplay ? ` → ${outLine}` : ''}`
+      );
       continue;
     }
 
@@ -124,8 +133,9 @@ const extractOutstandingContext = (blocks: NormalizedBlock[]): string[] => {
     if (b.kind === 'bash' && b.output) {
       const outputHead = b.output.slice(0, BASH_OUTPUT_SCAN_LIMIT);
       if (TSC_ERROR_RE.test(outputHead)) {
-        const tsLines = outputHead.split('\n')
-          .filter(l => TSC_ERROR_RE.test(l.trim()))
+        const tsLines = outputHead
+          .split('\n')
+          .filter((l) => TSC_ERROR_RE.test(l.trim()))
           .slice(0, 3);
         for (const line of tsLines) {
           push(`[tsc] ${clip(line.trim(), 150)}`, bi);
@@ -135,19 +145,29 @@ const extractOutstandingContext = (blocks: NormalizedBlock[]): string[] => {
     }
 
     // 3. Test failures in bash output
-    if (b.kind === 'bash' && b.output && TEST_FAIL_RE.test(b.output.slice(0, BASH_OUTPUT_SCAN_LIMIT))) {
+    if (
+      b.kind === 'bash' &&
+      b.output &&
+      TEST_FAIL_RE.test(b.output.slice(0, BASH_OUTPUT_SCAN_LIMIT))
+    ) {
       push(`[tests] ${firstLine(b.output, 150)}`);
       continue;
     }
 
     // 4. Empty grep/search results (searched for something that wasn't found = signal)
-    if (b.kind === 'tool_result' && (b.name === 'grep' || b.name === 'Grep' || b.name === 'Glob' || b.name === 'glob')) {
+    if (
+      b.kind === 'tool_result' &&
+      (b.name === 'grep' || b.name === 'Grep' || b.name === 'Glob' || b.name === 'glob')
+    ) {
       const trimmed = b.text.trim();
       if (EMPTY_RESULT_RE.test(trimmed) || trimmed === '') {
         let prevIdx = -1;
         for (let pi = bi - 1; pi >= 0; pi--) {
           const pp = tail[pi];
-          if (pp.kind === 'tool_call' && (pp.name === 'grep' || pp.name === 'Grep' || pp.name === 'Glob' || pp.name === 'glob')) {
+          if (
+            pp.kind === 'tool_call' &&
+            (pp.name === 'grep' || pp.name === 'Grep' || pp.name === 'Glob' || pp.name === 'glob')
+          ) {
             prevIdx = pi;
             break;
           }
@@ -169,8 +189,9 @@ const extractOutstandingContext = (blocks: NormalizedBlock[]): string[] => {
     if (b.kind === 'tool_result' && b.isError) {
       // Check for tsc errors in tool result text first
       if (TSC_ERROR_RE.test(b.text)) {
-        const tsLines = b.text.split('\n')
-          .filter(l => TSC_ERROR_RE.test(l.trim()))
+        const tsLines = b.text
+          .split('\n')
+          .filter((l) => TSC_ERROR_RE.test(l.trim()))
           .slice(0, 3);
         for (const line of tsLines) {
           push(`[tsc] ${clip(line.trim(), 150)}`, bi);
@@ -195,7 +216,8 @@ const extractOutstandingContext = (blocks: NormalizedBlock[]): string[] => {
         if (/^\s*[-*+>]\s/.test(line)) continue;
         if (/^\s*\(/.test(line)) continue;
         if (!/^\s*["'`*_]?[A-Z`]/.test(line)) continue;
-        const clipped = b.kind === 'user' ? `[user] ${clipSentence(line, 150)}` : clipSentence(line, 150);
+        const clipped =
+          b.kind === 'user' ? `[user] ${clipSentence(line, 150)}` : clipSentence(line, 150);
         push(clipped);
         break;
       }
@@ -227,7 +249,9 @@ const extractOutstandingContext = (blocks: NormalizedBlock[]): string[] => {
   });
 };
 
-const formatFileActivityFromUnified = (data: import('./extract/shared-symbols').UnifiedExtractResult): string[] => {
+const formatFileActivityFromUnified = (
+  data: import('./extract/shared-symbols').UnifiedExtractResult
+): string[] => {
   const act = data.fileActivity;
   const formatCategory = (label: string, set: Set<string>): string | null => {
     if (set.size === 0) return null;
@@ -251,7 +275,9 @@ const formatFileActivityFromUnified = (data: import('./extract/shared-symbols').
   return lines;
 };
 
-const formatTypeCatalogFromUnified = (data: import('./extract/shared-symbols').UnifiedExtractResult): string[] => {
+const formatTypeCatalogFromUnified = (
+  data: import('./extract/shared-symbols').UnifiedExtractResult
+): string[] => {
   const catalog = data.typeCatalog;
   if (catalog.length === 0) return [];
   const lines: string[] = [];
@@ -292,12 +318,9 @@ export const buildSections = (input: BuildSectionsInput): SectionData => {
 
   const briefSections = buildBriefSections(blocks);
   const sessionGoal = extractGoals(blocks);
-  const userPreferences = dedupPreferencesAgainstGoals(
-    extractPreferences(blocks),
-    sessionGoal,
-  );
+  const userPreferences = dedupPreferencesAgainstGoals(extractPreferences(blocks), sessionGoal);
 
-  const turnSummaries = identifyTurns(blocks).map(t => t.summary);
+  const turnSummaries = identifyTurns(blocks).map((t) => t.summary);
   const outstandingContext = extractOutstandingContext(blocks);
 
   const result: SectionData = {

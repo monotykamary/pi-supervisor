@@ -415,7 +415,9 @@ describe('detectMidRunSignals', () => {
     const messages: Message[] = [];
     // Read same file 5 times but each time with a different offset (pagination)
     for (let i = 0; i < 5; i++) {
-      messages.push(makeToolCallMessage('Read', { file_path: 'src/auth.ts', offset: i * 50 + 1, limit: 50 }));
+      messages.push(
+        makeToolCallMessage('Read', { file_path: 'src/auth.ts', offset: i * 50 + 1, limit: 50 })
+      );
       messages.push(makeToolResultMessage('Read', 'content'));
     }
 
@@ -427,7 +429,9 @@ describe('detectMidRunSignals', () => {
     const messages: Message[] = [];
     // Read same file 5 times with the same offset — actual loop
     for (let i = 0; i < 5; i++) {
-      messages.push(makeToolCallMessage('Read', { file_path: 'src/auth.ts', offset: 1, limit: 50 }));
+      messages.push(
+        makeToolCallMessage('Read', { file_path: 'src/auth.ts', offset: 1, limit: 50 })
+      );
       messages.push(makeToolResultMessage('Read', 'content'));
     }
 

@@ -4,7 +4,11 @@
 
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { SupervisorSession } from '../session/supervisor-session.js';
-import { extractMessages, buildCompactionSummary, formatForSupervisor } from '../compaction/index.js';
+import {
+  extractMessages,
+  buildCompactionSummary,
+  formatForSupervisor,
+} from '../compaction/index.js';
 
 /** System prompt for inferring an outcome from conversation history. */
 const INFER_OUTCOME_SYSTEM_PROMPT = `You are a goal extraction assistant. Your task is to analyze a conversation between a user and a coding AI assistant, and extract the user's primary desired outcome or goal.

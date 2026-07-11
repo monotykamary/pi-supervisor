@@ -40,8 +40,7 @@ export function startLineClearAnimation(
       return { type: 'done', reframeTier: 0 };
     }
     if (actionType === 'waiting') {
-      const message =
-        state.storedAction?.type === 'waiting' ? state.storedAction.message : '';
+      const message = state.storedAction?.type === 'waiting' ? state.storedAction.message : '';
       const reframeTier =
         state.storedAction?.type === 'waiting' ? (state.storedAction.reframeTier ?? 0) : 0;
       return { type: 'waiting', message, reframeTier };

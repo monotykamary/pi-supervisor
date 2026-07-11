@@ -174,9 +174,10 @@ export default function (pi: ExtensionAPI) {
   });
 
   // ---- After each agent run: analyze + steer ----
-  // agent_end fires once per user prompt, always with the agent idle.
+  // agent_settled fires once pi has fully settled — auto-retries, overflow-
+  // compaction recovery, and queued follow-up messages are all done.
 
-  pi.on('agent_end', async (_event, ctx) => {
+  pi.on('agent_settled', async (_event, ctx) => {
     currentCtx = ctx;
     if (!state.isActive()) return;
 

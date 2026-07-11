@@ -94,8 +94,7 @@ export function updateUI(
   const hasThinkingToAnimate = state.lastActiveState && state.lastThinkingLines.length > 0;
   const isDoneTransition = action.type === 'done' && state.lastActiveState;
   const needsClearAnimation =
-    (hasThinkingToAnimate && (!supervisorState?.active || leavingAnalyzing)) ||
-    isDoneTransition;
+    (hasThinkingToAnimate && (!supervisorState?.active || leavingAnalyzing)) || isDoneTransition;
 
   // Leaving analyzing to a non-done, non-analyzing action — animate the thinking
   // text away immediately (no delay), so it doesn't vanish instantly.
@@ -108,7 +107,11 @@ export function updateUI(
     if (action.type === 'steering') {
       fallbackAction = { type: 'steering', message: '', reframeTier: action.reframeTier };
     } else if (action.type === 'waiting') {
-      fallbackAction = { type: 'waiting', message: action.message, reframeTier: action.reframeTier };
+      fallbackAction = {
+        type: 'waiting',
+        message: action.message,
+        reframeTier: action.reframeTier,
+      };
     } else if (action.type === 'inferring') {
       fallbackAction = { type: 'inferring' };
     } else {
@@ -286,7 +289,9 @@ function renderWithState(
             currentThinkingLine = currentThinkingLine ? `${currentThinkingLine} ${word}` : word;
           } else {
             if (currentThinkingLine) {
-              thinkingLines.push(truncateToWidth(thinkingPrefix + theme.fg('dim', currentThinkingLine), paddedWidth));
+              thinkingLines.push(
+                truncateToWidth(thinkingPrefix + theme.fg('dim', currentThinkingLine), paddedWidth)
+              );
               plainLines.push('  ' + currentPlainLine);
             }
             currentPlainLine = word;
@@ -294,7 +299,9 @@ function renderWithState(
           }
         }
         if (currentThinkingLine) {
-          thinkingLines.push(truncateToWidth(thinkingPrefix + theme.fg('dim', currentThinkingLine), paddedWidth));
+          thinkingLines.push(
+            truncateToWidth(thinkingPrefix + theme.fg('dim', currentThinkingLine), paddedWidth)
+          );
           plainLines.push('  ' + currentPlainLine);
         }
 

@@ -32,28 +32,25 @@ export const clipSentence = (text: string, max = 200): string => {
 };
 
 export const nonEmptyLines = (text: string): string[] =>
-  text.split('\n').map((line) => line.trim()).filter(Boolean);
+  text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
 
-export const firstLine = (text: string, max = 200): string =>
-  clip(text.split('\n')[0] ?? '', max);
+export const firstLine = (text: string, max = 200): string => clip(text.split('\n')[0] ?? '', max);
 
 const textParts = (content: Message['content']): string[] => {
   if (!content) return [];
   if (typeof content === 'string') return [content];
-  return content
-    .filter((part) => part.type === 'text')
-    .map((part) => part.text);
+  return content.filter((part) => part.type === 'text').map((part) => part.text);
 };
 
-export const textOf = (content: Message['content']): string =>
-  textParts(content).join('\n');
+export const textOf = (content: Message['content']): string => textParts(content).join('\n');
 
 const thinkingParts = (content: Message['content']): string[] => {
   if (!content) return [];
   if (typeof content === 'string') return [];
-  return content
-    .filter((part) => part.type === 'thinking')
-    .map((part) => part.thinking ?? '');
+  return content.filter((part) => part.type === 'thinking').map((part) => part.thinking ?? '');
 };
 
 export const thinkingOf = (content: Message['content']): string =>
