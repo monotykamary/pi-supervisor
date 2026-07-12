@@ -81,6 +81,8 @@ pi -e ~/projects/pi-supervisor/src/index.ts
 
 The agent can also initiate supervision itself by calling the `start_supervision` tool — useful when it recognises a task needs goal tracking. The tool uses the global config model or active chat model; the AI cannot specify a model. Once active, supervision is locked: only the user can change or stop it.
 
+When [pi-fabric](https://github.com/monotykamary/pi-fabric) is installed, pi-supervisor also registers a versioned Fabric provider. Fabric programs can discover `supervisor.start` and `supervisor.status` through `tools.search()` and invoke them with `tools.call()`. Stop and goal mutation remain user-only.
+
 ## UI
 
 ### Live Widget

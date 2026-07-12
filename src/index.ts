@@ -25,6 +25,7 @@ import { disposeSession } from './session/client.js';
 import { Type } from '@sinclair/typebox';
 import { checkChildPiProcesses, waitForSubagents } from './subagent-detector.js';
 import { detectMidRunSignals } from './state/mid-run-signals.js';
+import { registerFabricProvider } from './fabric-provider.js';
 import { createInitialState, type WidgetState } from './ui/types.js';
 import {
   extractMessages,
@@ -78,6 +79,43 @@ export default function (pi: ExtensionAPI) {
   const state = new SupervisorStateManager(pi);
   const widgetState = createInitialState();
   let currentCtx: ExtensionContext | undefined;
+
+  const startSupervisionFromModel = async (
+    outcome: string,
+    ctx: ExtensionContext
+  ): Promise<string> => {
+    if (state.isActive()) {
+      const activeState = state.getState()!;
+      return (
+        `Supervision is already active and cannot be changed by the model.\n` +
+        `Active outcome: "${activeState.outcome}"\n` +
+        `Only the user can stop or modify supervision via /supervise.`
+      );
+    }
+
+    const globalModel = loadGlobalModel();
+    const sessionModel = ctx.model;
+    const provider = globalModel?.provider ?? sessionModel?.provider ?? 'unknown';
+    const modelId = globalModel?.modelId ?? sessionModel?.id ?? 'unknown';
+
+    state.start(outcome, provider, modelId);
+    currentCtx = ctx;
+    updateUI(ctx, widgetState, state.getState());
+
+    if (ctx.isIdle()) {
+      pi.sendUserMessage(`Please start working on this goal: ${outcome}`, {
+        deliverAs: 'followUp',
+      });
+    }
+
+    ctx.ui.notify(`Supervisor started by agent: "${truncateForNotify(outcome, 30)}"`, 'info');
+    return `Supervision active. Outcome: "${outcome}"`;
+  };
+
+  registerFabricProvider(pi, {
+    start: startSupervisionFromModel,
+    getState: () => state.getState(),
+  });
 
   // ---- Session lifecycle: restore state ----
 
@@ -470,36 +508,7 @@ export default function (pi: ExtensionAPI) {
         details: undefined,
       });
 
-      if (state.isActive()) {
-        const s = state.getState()!;
-        return text(
-          `Supervision is already active and cannot be changed by the model.\n` +
-            `Active outcome: "${s.outcome}"\n` +
-            `Only the user can stop or modify supervision via /supervise.`
-        );
-      }
-
-      const globalModel = loadGlobalModel();
-      const sessionModel = ctx.model;
-      const provider = globalModel?.provider ?? sessionModel?.provider ?? 'unknown';
-      const modelId = globalModel?.modelId ?? sessionModel?.id ?? 'unknown';
-
-      state.start(params.outcome, provider, modelId);
-      currentCtx = ctx;
-      updateUI(ctx, widgetState, state.getState());
-
-      if (ctx.isIdle()) {
-        pi.sendUserMessage(`Please start working on this goal: ${params.outcome}`, {
-          deliverAs: 'followUp',
-        });
-      }
-
-      ctx.ui.notify(
-        `Supervisor started by agent: "${truncateForNotify(params.outcome, 30)}"`,
-        'info'
-      );
-
-      return text(`Supervision active. Outcome: "${params.outcome}"`);
+      return text(await startSupervisionFromModel(params.outcome, ctx));
     },
   });
 }
