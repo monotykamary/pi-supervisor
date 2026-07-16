@@ -48,7 +48,7 @@ export class SupervisorSession {
     try {
       const result = await createAgentSession({
         sessionManager: SessionManager.inMemory(),
-        modelRegistry: ctx.modelRegistry,
+        agentDir: getAgentDir(),
         model: newModel,
         tools: [],
         resourceLoader: loader,

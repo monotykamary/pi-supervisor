@@ -186,7 +186,7 @@ export class SupervisorModelSelectorComponent extends Container {
   private async loadModels(): Promise<void> {
     let models: ModelItem[];
     // Refresh to pick up any changes to models.json
-    this.modelRegistry.refresh();
+    await this.modelRegistry.refresh();
     const loadError = this.modelRegistry.getError();
     if (loadError) {
       this.errorMessage = loadError;

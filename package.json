@@ -1,6 +1,6 @@
 {
   "name": "pi-supervisor",
-  "version": "0.5.7",
+  "version": "0.5.8",
   "description": "A pi extension that supervises the chat and steers it towards a defined outcome",
   "author": "tintinweb (forked by monotykamary)",
   "license": "MIT",
@@ -33,14 +33,14 @@
     "media/"
   ],
   "peerDependencies": {
-    "@earendil-works/pi-ai": ">=0.80.6",
-    "@earendil-works/pi-coding-agent": ">=0.80.6",
+    "@earendil-works/pi-ai": ">=0.80.8",
+    "@earendil-works/pi-coding-agent": ">=0.80.8",
     "@sinclair/typebox": "0.34.49"
   },
   "devDependencies": {
     "@commitlint/cli": "21.0.1",
     "@commitlint/config-conventional": "21.0.1",
-    "@earendil-works/pi-tui": "0.80.6",
+    "@earendil-works/pi-tui": "0.80.8",
     "@types/node": "25.9.1",
     "knip": "6.14.1",
     "lint-staged": "17.0.5",
