@@ -79,6 +79,16 @@ export default function (pi: ExtensionAPI) {
   const state = new SupervisorStateManager(pi);
   const widgetState = createInitialState();
   let currentCtx: ExtensionContext | undefined;
+  let userInputEpoch = 0;
+
+  pi.on('input', (event) => {
+    if (event.source === 'interactive' || event.source === 'rpc') {
+      userInputEpoch++;
+    }
+  });
+  pi.on('before_agent_start', () => {
+    userInputEpoch++;
+  });
 
   const startSupervisionFromModel = async (
     outcome: string,
@@ -222,6 +232,7 @@ export default function (pi: ExtensionAPI) {
   pi.on('agent_settled', async (_event, ctx) => {
     currentCtx = ctx;
     if (!state.isActive()) return;
+    const inputEpochAtStart = userInputEpoch;
 
     const s = state.getState()!;
 
@@ -263,7 +274,7 @@ export default function (pi: ExtensionAPI) {
     const decision = await analyze(
       ctx,
       state.getState()!,
-      true /* always idle at agent_end */,
+      true /* fully settled checkpoint */,
       ineffectivePattern,
       undefined,
       (accumulated) => {
@@ -275,6 +286,16 @@ export default function (pi: ExtensionAPI) {
         });
       }
     );
+
+    // A real user prompt supersedes a decision computed from the preceding
+    // settled snapshot. Do not race that prompt or steer from stale context.
+    if (userInputEpoch !== inputEpochAtStart) {
+      updateUI(ctx, widgetState, state.getState(), {
+        type: 'watching',
+        reframeTier: state.getReframeTier(),
+      });
+      return;
+    }
 
     if (decision.action === 'steer' && decision.message) {
       state.incrementIdleSteers();
@@ -289,7 +310,7 @@ export default function (pi: ExtensionAPI) {
         message: decision.message,
         reframeTier: state.getReframeTier(),
       });
-      pi.sendUserMessage(decision.message, { deliverAs: 'steer' });
+      pi.sendUserMessage(decision.message, { deliverAs: 'followUp' });
     } else if (decision.action === 'done') {
       state.resetIdleSteers();
       state.resetReframeTier();
