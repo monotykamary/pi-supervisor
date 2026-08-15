@@ -1,11 +1,5 @@
 import type { Message } from '@earendil-works/pi-ai';
 
-export interface FileOps {
-  readFiles?: string[];
-  modifiedFiles?: string[];
-  createdFiles?: string[];
-}
-
 /** Pre-computed look-ahead index: maps tool_call index → nearest tool_result block. */
 export interface ToolResultIndex {
   get(callIndex: number): Extract<NormalizedBlock, { kind: 'tool_result' }> | null;

@@ -32,13 +32,13 @@ const wrapLine = (line: string, maxChars: number): string[] => {
   return wrapped;
 };
 
-export const wrapLongLines = (text: string, maxChars = TUI_SAFE_LINE_CHARS): string =>
+const wrapLongLines = (text: string, maxChars = TUI_SAFE_LINE_CHARS): string =>
   text
     .split('\n')
     .flatMap((line) => wrapLine(line, maxChars))
     .join('\n');
 
-export const capBrief = (text: string): string => {
+const capBrief = (text: string): string => {
   const lines = text.split('\n');
   if (lines.length <= BRIEF_MAX_LINES) return text;
   const omitted = lines.length - BRIEF_MAX_LINES;

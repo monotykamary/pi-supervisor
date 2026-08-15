@@ -489,12 +489,6 @@ export const sectionsToTranscript = (sections: BriefLine[]): TranscriptEntry[] =
   return entries;
 };
 
-// ── convenience ──
-
-/** Build and stringify the brief transcript in one call. */
-export const compileBrief = (blocks: NormalizedBlock[]): string =>
-  stringifyBrief(buildBriefSections(blocks));
-
 // ── turn identification (HCA zone) ──
 
 const WRITE_TOOLS = new Set(['Edit', 'Write', 'edit', 'write', 'MultiEdit']);
@@ -664,9 +658,7 @@ const extractFragment = (text: string, markers: readonly string[]): string | nul
  * O(n): indexOf + linear char scan per marker; no regex backtracking.
  * Bounded: fragments are capped at CAUSAL_BREADCRUMB_MAX chars.
  */
-export const extractCausalChain = (
-  text: string
-): { cause: string | null; resolution: string | null } => {
+const extractCausalChain = (text: string): { cause: string | null; resolution: string | null } => {
   // Try full text first (markers can span sentence boundaries)
   let cause = extractFragment(text, CAUSE_MARKERS);
   let resolution = extractFragment(text, RESOLUTION_MARKERS);

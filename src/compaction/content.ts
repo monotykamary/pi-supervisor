@@ -47,15 +47,6 @@ const textParts = (content: Message['content']): string[] => {
 
 export const textOf = (content: Message['content']): string => textParts(content).join('\n');
 
-const thinkingParts = (content: Message['content']): string[] => {
-  if (!content) return [];
-  if (typeof content === 'string') return [];
-  return content.filter((part) => part.type === 'thinking').map((part) => part.thinking ?? '');
-};
-
-export const thinkingOf = (content: Message['content']): string =>
-  thinkingParts(content).join('\n');
-
 /** Extract a snippet of ~`radius` chars around the first match of `term` in `text`. */
 const snippet = (text: string, term: string, radius = 60): string | null => {
   const idx = text.toLowerCase().indexOf(term.toLowerCase());
