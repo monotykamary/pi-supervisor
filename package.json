@@ -1,6 +1,6 @@
 {
   "name": "@monotykamary/pi-supervisor",
-  "version": "0.5.13",
+  "version": "0.5.14",
   "description": "A pi extension that supervises the chat and steers it towards a defined outcome",
   "author": "tintinweb (forked by monotykamary)",
   "license": "MIT",
