@@ -1,4 +1,3 @@
 {
-  "$schema": "https://unpkg.com/knip@6/schema.json",
-  "ignoreDependencies": ["@earendil-works/pi-server"]
+  "$schema": "https://unpkg.com/knip@6/schema.json"
 }
