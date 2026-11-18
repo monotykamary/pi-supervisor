@@ -7,59 +7,54 @@
  * Removed: sensitivity (now automatic)
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { readJsonConfig, updateJsonConfig } from './config-file.js';
 
 const CONFIG_DIR = '.pi';
 const CONFIG_FILE = 'supervisor-config.json';
 
-interface SupervisorConfig {
-  model?: {
-    provider: string;
-    modelId: string;
-  };
+interface SupervisorModel {
+  provider: string;
+  modelId: string;
+}
+
+function parseModel(model: unknown): SupervisorModel | undefined {
+  if (
+    model &&
+    typeof model === 'object' &&
+    'provider' in model &&
+    typeof model.provider === 'string' &&
+    model.provider &&
+    'modelId' in model &&
+    typeof model.modelId === 'string' &&
+    model.modelId
+  ) {
+    return { provider: model.provider, modelId: model.modelId };
+  }
 }
 
 /** Load the supervisor model config from cwd/.pi/supervisor-config.json if it exists. */
-export function loadGlobalModel(): { provider: string; modelId: string } | null {
+export function loadGlobalModel(): SupervisorModel | null {
   const configPath = join(process.cwd(), CONFIG_DIR, CONFIG_FILE);
-  if (!existsSync(configPath)) return null;
-
   try {
-    const content = readFileSync(configPath, 'utf-8');
-    const parsed = JSON.parse(content) as SupervisorConfig;
-    if (parsed.model?.provider && parsed.model?.modelId) {
-      return { provider: parsed.model.provider, modelId: parsed.model.modelId };
-    }
+    return parseModel(readJsonConfig(configPath)?.model) ?? null;
   } catch {
-    // ignore parse errors
+    return null;
   }
-  return null;
 }
 
 /**
  * Save the supervisor model config to <cwd>/.pi/supervisor-config.json,
  * preserving any other keys already present. Creates the .pi directory if
- * missing. Returns the written config path.
+ * missing. Throws instead of overwriting invalid config. Returns the config path.
  */
-export function saveGlobalModel(cwd: string, model: { provider: string; modelId: string }): string {
-  const dir = join(cwd, CONFIG_DIR);
-  const configPath = join(dir, CONFIG_FILE);
-
-  let existing: SupervisorConfig = {};
-  if (existsSync(configPath)) {
-    try {
-      existing = JSON.parse(readFileSync(configPath, 'utf-8')) as SupervisorConfig;
-    } catch {
-      // ignore parse errors — start fresh
+export function saveGlobalModel(cwd: string, model: SupervisorModel): string {
+  const configPath = join(cwd, CONFIG_DIR, CONFIG_FILE);
+  updateJsonConfig(configPath, (existing) => {
+    if (existing && 'model' in existing && !parseModel(existing.model)) {
+      throw new Error(`Invalid model in ${configPath}`);
     }
-  }
-
-  if (!existsSync(dir)) {
-    mkdirSync(dir, { recursive: true });
-  }
-
-  const merged: SupervisorConfig = { ...existing, model };
-  writeFileSync(configPath, JSON.stringify(merged, null, 2) + '\n', 'utf-8');
+    return { ...existing, model };
+  });
   return configPath;
 }

@@ -385,10 +385,16 @@ export default function (pi: ExtensionAPI) {
           return;
         }
 
-        const configPath = saveGlobalModel(ctx.cwd, {
-          provider: picked.provider,
-          modelId: picked.id,
-        });
+        let configPath: string;
+        try {
+          configPath = saveGlobalModel(ctx.cwd, {
+            provider: picked.provider,
+            modelId: picked.id,
+          });
+        } catch (error) {
+          ctx.ui.notify(`Could not save supervisor model: ${String(error)}`, 'error');
+          return;
+        }
 
         if (state.isActive() && existing) {
           state.setModel(picked.provider, picked.id);
